@@ -13,16 +13,21 @@ export default function CreateQuiz() {
   const [description, setDescription] = useState('');
   const [inputText, setInputText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
-  const [method, setMethod] = useState('file'); // 'file' | 'text'
-  const [engine, setEngine] = useState('smart'); // 'smart' | 'ai'
+  const [method, setMethod] = useState('file');
+  const [engine, setEngine] = useState('smart');
   const [apiKey, setApiKey] = useState('');
   const [questionCount, setQuestionCount] = useState(500);
+
+  // Quiz Configurations
+  const [timeLimit, setTimeLimit] = useState(30); // Phút
+  const [maxAttempts, setMaxAttempts] = useState(0); // 0 = Không giới hạn
+
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState('');
 
-  // Xử lý khi chọn file
+  // Xử lý chọn file
   async function handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -33,7 +38,7 @@ export default function CreateQuiz() {
     }
   }
 
-  // Xử lý chuyển đổi file / text thành câu hỏi
+  // Tự động tạo câu hỏi từ file/text
   async function handleGenerate(e) {
     e.preventDefault();
     setError('');
@@ -85,6 +90,51 @@ export default function CreateQuiz() {
     }
   }
 
+  // Đổi đáp án đúng cho câu hỏi trong danh sách preview
+  function handleSelectCorrectAnswer(questionIdx, optionIdx) {
+    setQuestions((prev) =>
+      prev.map((q, idx) =>
+        idx === questionIdx ? { ...q, correctAnswer: optionIdx } : q
+      )
+    );
+  }
+
+  // Sửa nội dung câu hỏi
+  function handleUpdateQuestionText(questionIdx, text) {
+    setQuestions((prev) =>
+      prev.map((q, idx) => (idx === questionIdx ? { ...q, question: text } : q))
+    );
+  }
+
+  // Sửa nội dung lựa chọn đáp án
+  function handleUpdateOptionText(questionIdx, optionIdx, text) {
+    setQuestions((prev) =>
+      prev.map((q, idx) => {
+        if (idx !== questionIdx) return q;
+        const newOpts = [...q.options];
+        newOpts[optionIdx] = text;
+        return { ...q, options: newOpts };
+      })
+    );
+  }
+
+  // Thêm 1 câu hỏi thủ công
+  function handleAddQuestion() {
+    const newQ = {
+      id: `manual-${Date.now()}`,
+      question: 'Nhập nội dung câu hỏi mới...',
+      options: ['Lựa chọn A', 'Lựa chọn B', 'Lựa chọn C', 'Lựa chọn D'],
+      correctAnswer: 0,
+      explanation: 'Đáp án đúng là A.',
+    };
+    setQuestions((prev) => [...prev, newQ]);
+  }
+
+  // Xóa 1 câu trong danh sách
+  function handleDeleteQuestion(index) {
+    setQuestions((prev) => prev.filter((_, idx) => idx !== index));
+  }
+
   // Lưu bộ đề
   function handleSaveQuiz() {
     if (!title.trim()) {
@@ -96,6 +146,8 @@ export default function CreateQuiz() {
       return;
     }
 
+    const shareCode = `AQ-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
     const newQuiz = {
       id: `custom-${Date.now()}`,
       title: title.trim(),
@@ -104,16 +156,15 @@ export default function CreateQuiz() {
       color: '#6c5ce7',
       questions,
       questionCount: questions.length,
+      timeLimit: parseInt(timeLimit) || 30,
+      maxAttempts: parseInt(maxAttempts) || 0,
+      shareCode,
       createdAt: new Date().toISOString(),
     };
 
     saveCustomQuiz(newQuiz);
+    alert(`🎉 Tạo thành công bộ đề thi!\nMã chia sẻ: ${shareCode}`);
     navigate('/');
-  }
-
-  // Xóa 1 câu trong danh sách xem trước
-  function handleDeleteQuestion(index) {
-    setQuestions((prev) => prev.filter((_, idx) => idx !== index));
   }
 
   return (
@@ -125,10 +176,10 @@ export default function CreateQuiz() {
             ← Quay lại Trang chủ
           </button>
           <h1 className="heading-2">
-            ✨ Tạo Đề Thi Từ <span className="text-gradient">Tài Liệu / File</span>
+            ✨ Tạo Đề Thi & <span className="text-gradient">Tùy Chỉnh Cấu Hình</span>
           </h1>
           <p className="text-secondary">
-            Tải file (.docx, .pdf, .txt, .json) hoặc dán văn bản bài học để tự động biến thành bộ câu hỏi trắc nghiệm (hỗ trợ tới 500 câu, tự động xáo trộn đáp án)
+            Tải file (.docx, .txt, .json) hoặc dán văn bản bài học để tự động tạo bộ đề, chỉnh sửa đáp án, thiết lập thời gian & số lượt làm bài
           </p>
         </div>
 
@@ -142,7 +193,7 @@ export default function CreateQuiz() {
               <input
                 type="text"
                 className="input"
-                placeholder="VD: Ôn tập Kiểm tra giữa kỳ..."
+                placeholder="VD: Ôn tập Kiểm tra Lịch Sử..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -166,7 +217,6 @@ export default function CreateQuiz() {
               </button>
             </div>
 
-            {/* File Upload Box */}
             {method === 'file' ? (
               <div className="file-upload-box">
                 <input
@@ -189,7 +239,7 @@ export default function CreateQuiz() {
                 <label>Nội dung văn bản / Ghi chú bài học</label>
                 <textarea
                   className="input textarea-input"
-                  rows={8}
+                  rows={6}
                   placeholder="Dán nội dung bài học, tài liệu ôn tập hoặc đề thi đã có sẵn dạng text..."
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
@@ -198,10 +248,46 @@ export default function CreateQuiz() {
             )}
 
             <h3 className="section-title" style={{ marginTop: '1.5rem' }}>
-              2. Công cụ tạo câu hỏi
+              2. Thiết lập thời gian & lượt thi
             </h3>
 
-            {/* Engine Toggle */}
+            <div className="config-grid">
+              <div className="input-group">
+                <label>⏱️ Thời gian làm bài (phút)</label>
+                <select
+                  className="input"
+                  value={timeLimit}
+                  onChange={(e) => setTimeLimit(e.target.value)}
+                >
+                  <option value={15}>15 phút</option>
+                  <option value={30}>30 phút (Mặc định)</option>
+                  <option value={45}>45 phút</option>
+                  <option value={60}>60 phút</option>
+                  <option value={90}>90 phút</option>
+                  <option value={120}>120 phút</option>
+                </select>
+              </div>
+
+              <div className="input-group">
+                <label>🔄 Số lượt thi tối đa</label>
+                <select
+                  className="input"
+                  value={maxAttempts}
+                  onChange={(e) => setMaxAttempts(e.target.value)}
+                >
+                  <option value={0}>∞ Không giới hạn</option>
+                  <option value={1}>1 lần thi duy nhất</option>
+                  <option value={2}>2 lần thi</option>
+                  <option value={3}>3 lần thi</option>
+                  <option value={5}>5 lần thi</option>
+                </select>
+              </div>
+            </div>
+
+            <h3 className="section-title" style={{ marginTop: '1.5rem' }}>
+              3. Công cụ tạo câu hỏi
+            </h3>
+
             <div className="engine-toggle">
               <label className={`engine-option ${engine === 'smart' ? 'active' : ''}`}>
                 <input
@@ -213,7 +299,7 @@ export default function CreateQuiz() {
                 />
                 <div>
                   <strong>⚡ Smart Generator (Khuyên dùng)</strong>
-                  <p>Tự động tách câu hỏi sẵn có hoặc tạo từ văn bản thô trên trình duyệt (Miễn phí 100%)</p>
+                  <p>Tự động đọc đáp án tô vàng & tạo câu hỏi từ file/text (Miễn phí 100%)</p>
                 </div>
               </label>
 
@@ -227,7 +313,7 @@ export default function CreateQuiz() {
                 />
                 <div>
                   <strong>🤖 Gemini AI Engine</strong>
-                  <p>Sử dụng AI tạo câu hỏi thông minh & sâu sắc từ văn bản phức tạp</p>
+                  <p>Sử dụng AI tạo câu hỏi thông minh từ văn bản phức tạp</p>
                 </div>
               </label>
             </div>
@@ -238,27 +324,13 @@ export default function CreateQuiz() {
                 <input
                   type="password"
                   className="input"
-                  placeholder="Nhập Gemini API Key của bạn..."
+                  placeholder="Nhập Gemini API Key..."
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                 />
-                <span className="setting-hint">Lấy API Key miễn phí tại Google AI Studio</span>
               </div>
             )}
 
-            <div className="input-group" style={{ marginTop: '1rem' }}>
-              <label>Số lượng câu hỏi tối đa</label>
-              <input
-                type="number"
-                className="input"
-                min={1}
-                max={500}
-                value={questionCount}
-                onChange={(e) => setQuestionCount(Math.min(500, Math.max(1, parseInt(e.target.value) || 1)))}
-              />
-            </div>
-
-            {/* Status & Error */}
             {statusMessage && <div className="status-box info-box animate-fade-in">{statusMessage}</div>}
             {error && <div className="status-box error-box animate-fade-in">⚠️ {error}</div>}
 
@@ -273,23 +345,31 @@ export default function CreateQuiz() {
             </button>
           </div>
 
-          {/* Question Preview Section */}
+          {/* Question Preview & Interactive Editor Section */}
           <div className="create-preview-section glass-card animate-fade-in-up stagger-2">
             <div className="preview-header">
-              <h3 className="section-title">
-                3. Danh sách câu hỏi ({questions.length})
-              </h3>
-              {questions.length > 0 && (
-                <button className="btn btn-success" onClick={handleSaveQuiz}>
-                  💾 Lưu & Tạo Bộ Đề
+              <div>
+                <h3 className="section-title" style={{ marginBottom: '2px' }}>
+                  4. Chỉnh sửa danh sách câu hỏi ({questions.length})
+                </h3>
+                <span className="preview-hint">💡 Nhấp vào đáp án A/B/C/D để chọn làm ĐÁP ÁN ĐÚNG. Bạn cũng có thể sửa nội dung câu hỏi.</span>
+              </div>
+              <div className="preview-actions">
+                <button className="btn btn-secondary btn-sm" onClick={handleAddQuestion}>
+                  ➕ Thêm câu
                 </button>
-              )}
+                {questions.length > 0 && (
+                  <button className="btn btn-success" onClick={handleSaveQuiz}>
+                    💾 Lưu & Tạo Bộ Đề
+                  </button>
+                )}
+              </div>
             </div>
 
             {questions.length === 0 ? (
               <div className="preview-empty">
                 <span className="empty-icon">🎯</span>
-                <p>Danh sách câu hỏi sẽ xuất hiện ở đây sau khi tạo.</p>
+                <p>Danh sách câu hỏi sẽ xuất hiện ở đây để bạn xem & chọn đáp án đúng.</p>
               </div>
             ) : (
               <div className="preview-list">
@@ -305,28 +385,42 @@ export default function CreateQuiz() {
                         🗑️
                       </button>
                     </div>
-                    <p className="preview-question-text">{q.question}</p>
 
-                    <div className="preview-options">
+                    {/* Question text editor */}
+                    <textarea
+                      className="input preview-question-input"
+                      rows={2}
+                      value={q.question}
+                      onChange={(e) => handleUpdateQuestionText(idx, e.target.value)}
+                    />
+
+                    {/* Interactive Options Editor & Selection */}
+                    <div className="preview-options-editor">
                       {q.options.map((opt, optIdx) => (
                         <div
                           key={optIdx}
-                          className={`preview-option ${
-                            optIdx === q.correctAnswer ? 'correct' : ''
+                          className={`preview-option-edit ${
+                            optIdx === q.correctAnswer ? 'is-correct' : ''
                           }`}
+                          onClick={() => handleSelectCorrectAnswer(idx, optIdx)}
+                          title="Nhấp để chọn đáp án này là ĐÁP ÁN ĐÚNG"
                         >
-                          <span className="opt-letter">
+                          <span className="opt-letter-btn">
                             {String.fromCharCode(65 + optIdx)}
                           </span>
-                          <span>{opt}</span>
-                          {optIdx === q.correctAnswer && <span className="correct-check">✓</span>}
+                          <input
+                            type="text"
+                            className="input opt-input"
+                            value={opt}
+                            onChange={(e) => handleUpdateOptionText(idx, optIdx, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {optIdx === q.correctAnswer && (
+                            <span className="correct-badge">✅ Đúng</span>
+                          )}
                         </div>
                       ))}
                     </div>
-
-                    {q.explanation && (
-                      <p className="preview-exp">💡 {q.explanation}</p>
-                    )}
                   </div>
                 ))}
               </div>

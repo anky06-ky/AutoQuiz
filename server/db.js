@@ -14,7 +14,6 @@ let isDbConnected = false;
 
 export async function initDatabase() {
   try {
-    // 1. Kết nối không DB để đảm bảo DB tồn tại
     const rootConn = await mysql.createConnection({
       host: DB_HOST,
       port: DB_PORT,
@@ -25,7 +24,6 @@ export async function initDatabase() {
     await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     await rootConn.end();
 
-    // 2. Kết nối tới DB autoquiz_db
     pool = mysql.createPool({
       host: DB_HOST,
       port: DB_PORT,
@@ -37,7 +35,6 @@ export async function initDatabase() {
       queueLimit: 0,
     });
 
-    // 3. Tự động tạo các Bảng
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(50) PRIMARY KEY,
@@ -57,6 +54,9 @@ export async function initDatabase() {
         icon VARCHAR(20) DEFAULT '📂',
         color VARCHAR(20) DEFAULT '#6c5ce7',
         questionCount INT DEFAULT 0,
+        timeLimit INT DEFAULT 30,
+        maxAttempts INT DEFAULT 0,
+        shareCode VARCHAR(50),
         authorId VARCHAR(50) DEFAULT 'system',
         authorName VARCHAR(100) DEFAULT 'Hệ thống',
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP

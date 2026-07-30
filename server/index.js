@@ -11,7 +11,6 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// 1. Kiểm tra trạng thái Backend & MySQL
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -20,7 +19,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// 2. Đăng ký tài khoản
 app.post('/api/auth/register', async (req, res) => {
   const { username, password, displayName } = req.body;
   if (!username || !password) {
@@ -52,7 +50,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// 3. Đăng nhập
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   if (!isConnected()) {
@@ -76,7 +73,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 4. Lấy tất cả bộ đề thi
 app.get('/api/quizzes', async (req, res) => {
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -91,7 +87,6 @@ app.get('/api/quizzes', async (req, res) => {
   }
 });
 
-// 5. Lấy chi tiết bộ đề thi + danh sách câu hỏi
 app.get('/api/quizzes/:id', async (req, res) => {
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -99,12 +94,13 @@ app.get('/api/quizzes/:id', async (req, res) => {
 
   try {
     const pool = getPool();
-    const [quizRows] = await pool.query('SELECT * FROM quizzes WHERE id = ?', [req.params.id]);
+    const [quizRows] = await pool.query('SELECT * FROM quizzes WHERE id = ? OR shareCode = ?', [req.params.id, req.params.id]);
     if (quizRows.length === 0) {
       return res.status(404).json({ error: 'Không tìm thấy bộ đề' });
     }
 
-    const [qRows] = await pool.query('SELECT * FROM questions WHERE quizId = ? ORDER BY id ASC', [req.params.id]);
+    const quiz = quizRows[0];
+    const [qRows] = await pool.query('SELECT * FROM questions WHERE quizId = ? ORDER BY id ASC', [quiz.id]);
 
     const formattedQuestions = qRows.map(q => ({
       id: q.id,
@@ -115,7 +111,7 @@ app.get('/api/quizzes/:id', async (req, res) => {
     }));
 
     res.json({
-      ...quizRows[0],
+      ...quiz,
       questions: formattedQuestions,
     });
   } catch (err) {
@@ -123,9 +119,8 @@ app.get('/api/quizzes/:id', async (req, res) => {
   }
 });
 
-// 6. Tạo/Lưu bộ đề thi mới từ file
 app.post('/api/quizzes', async (req, res) => {
-  const { id, title, description, icon, color, questions, authorId, authorName } = req.body;
+  const { id, title, description, icon, color, questions, authorId, authorName, timeLimit, maxAttempts, shareCode } = req.body;
   if (!title || !questions || !Array.isArray(questions)) {
     return res.status(400).json({ error: 'Dữ liệu bộ đề thi không hợp lệ!' });
   }
@@ -135,24 +130,23 @@ app.post('/api/quizzes', async (req, res) => {
   }
 
   const quizId = id || `custom-${Date.now()}`;
+  const code = shareCode || Math.random().toString(36).substring(2, 8).toUpperCase();
   const pool = getPool();
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
 
-    // Chèn bộ đề vào bảng quizzes
     await conn.query(
-      `INSERT INTO quizzes (id, title, description, icon, color, questionCount, authorId, authorName)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE title=?, description=?, questionCount=?`,
+      `INSERT INTO quizzes (id, title, description, icon, color, questionCount, timeLimit, maxAttempts, shareCode, authorId, authorName)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE title=?, description=?, questionCount=?, timeLimit=?, maxAttempts=?, shareCode=?`,
       [
-        quizId, title, description || '', icon || '📂', color || '#6c5ce7', questions.length, authorId || 'guest', authorName || 'Guest',
-        title, description || '', questions.length
+        quizId, title, description || '', icon || '📂', color || '#6c5ce7', questions.length, timeLimit || 30, maxAttempts || 0, code, authorId || 'guest', authorName || 'Guest',
+        title, description || '', questions.length, timeLimit || 30, maxAttempts || 0, code
       ]
     );
 
-    // Chèn từng câu hỏi vào bảng questions
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       const qId = q.id || `q-${quizId}-${i + 1}`;
@@ -173,7 +167,7 @@ app.post('/api/quizzes', async (req, res) => {
     }
 
     await conn.commit();
-    res.json({ success: true, quizId, count: questions.length });
+    res.json({ success: true, quizId, shareCode: code, count: questions.length });
   } catch (err) {
     await conn.rollback();
     res.status(500).json({ error: err.message });
@@ -182,7 +176,6 @@ app.post('/api/quizzes', async (req, res) => {
   }
 });
 
-// 7. Xóa bộ đề
 app.delete('/api/quizzes/:id', async (req, res) => {
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -197,7 +190,6 @@ app.delete('/api/quizzes/:id', async (req, res) => {
   }
 });
 
-// 8. Lưu kết quả thi
 app.post('/api/history', async (req, res) => {
   const { userId, userName, quizId, categoryName, mode, totalQuestions, correctCount, score, timeSpent } = req.body;
   if (!isConnected()) {
@@ -218,7 +210,6 @@ app.post('/api/history', async (req, res) => {
   }
 });
 
-// 9. Lấy lịch sử thi của User
 app.get('/api/history/user/:userId', async (req, res) => {
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -233,7 +224,6 @@ app.get('/api/history/user/:userId', async (req, res) => {
   }
 });
 
-// 10. Lấy bảng xếp hạng
 app.get('/api/leaderboard', async (req, res) => {
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -242,7 +232,7 @@ app.get('/api/leaderboard', async (req, res) => {
   try {
     const pool = getPool();
     const [rows] = await pool.query(
-      `SELECT userId, userName, categoryName, categoryId, MAX(score) as score, totalQuestions, correctCount, MIN(timeSpent) as timeSpent
+      `SELECT userId, userName, categoryName, quizId, MAX(score) as score, totalQuestions, correctCount, MIN(timeSpent) as timeSpent
        FROM quiz_history
        GROUP BY userId, categoryName
        ORDER BY score DESC, timeSpent ASC
@@ -254,7 +244,6 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// Khởi động server
 initDatabase().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 AutoQuiz Backend Server đang chạy tại: http://localhost:${PORT}`);

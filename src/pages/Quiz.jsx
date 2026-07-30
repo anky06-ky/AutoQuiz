@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { categories, getRandomQuestions, getQuizTime } from '../data/questions';
+import { categories, getRandomQuestions } from '../data/questions';
 import { prepareQuizWithShuffledAnswers } from '../utils/fileParser';
 import QuestionCard from '../components/QuestionCard';
 import Timer from '../components/Timer';
@@ -11,24 +11,40 @@ export default function Quiz() {
   const { topic } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { saveQuizResult, getCustomQuizzes } = useAuth();
+  const { saveQuizResult, getCustomQuizzes, getMyHistory } = useAuth();
 
   const mode = searchParams.get('mode') || 'exam';
   const count = parseInt(searchParams.get('count')) || 10;
 
   // Lấy thông tin category mặc định hoặc custom quiz
   const customQuizzes = useMemo(() => getCustomQuizzes(), [getCustomQuizzes]);
-  const customQuiz = useMemo(() => customQuizzes.find(q => q.id === topic), [customQuizzes, topic]);
+  const customQuiz = useMemo(() => customQuizzes.find(q => q.id === topic || q.shareCode === topic), [customQuizzes, topic]);
 
   const category = customQuiz
-    ? { id: customQuiz.id, name: customQuiz.title, icon: customQuiz.icon || '📂', color: customQuiz.color }
+    ? {
+        id: customQuiz.id,
+        name: customQuiz.title,
+        icon: customQuiz.icon || '📂',
+        color: customQuiz.color,
+        timeLimit: customQuiz.timeLimit || 30,
+        maxAttempts: customQuiz.maxAttempts || 0,
+      }
     : categories.find((c) => c.id === topic);
+
+  // Kiểm tra giới hạn số lần làm bài
+  const myHistory = useMemo(() => getMyHistory(), [getMyHistory]);
+  const attemptsCount = useMemo(() => {
+    return myHistory.filter((h) => h.categoryId === topic || h.quizId === topic).length;
+  }, [myHistory, topic]);
+
+  const isAttemptLimitExceeded = category?.maxAttempts > 0 && attemptsCount >= category.maxAttempts;
 
   // Lấy câu hỏi & XÁO TRỘN ĐÁP ÁN (Shuffle option positions dynamically for each test)
   const quizQuestions = useMemo(() => {
-    const rawQuestions = getRandomQuestions(topic, count);
+    const targetTopic = customQuiz ? customQuiz.id : topic;
+    const rawQuestions = getRandomQuestions(targetTopic, count);
     return prepareQuizWithShuffledAnswers(rawQuestions);
-  }, [topic, count]);
+  }, [topic, customQuiz, count]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -36,11 +52,17 @@ export default function Quiz() {
   const [isFinished, setIsFinished] = useState(false);
   const [startTime] = useState(Date.now());
 
-  const totalTime = getQuizTime(quizQuestions.length);
+  // Thời gian thi (giây) theo cấu hình hoặc mặc định
+  const totalTime = useMemo(() => {
+    if (category?.timeLimit) {
+      return category.timeLimit * 60; // Đơn vị giây
+    }
+    return quizQuestions.length * 60;
+  }, [category, quizQuestions.length]);
 
   // Chọn đáp án
   function handleSelectAnswer(questionIndex, answerIndex) {
-    if (isFinished) return;
+    if (isFinished || isAttemptLimitExceeded) return;
 
     setAnswers((prev) => ({
       ...prev,
@@ -57,7 +79,7 @@ export default function Quiz() {
 
   // Nộp bài
   const handleSubmit = useCallback(() => {
-    if (isFinished) return;
+    if (isFinished || isAttemptLimitExceeded) return;
 
     setIsFinished(true);
 
@@ -78,7 +100,7 @@ export default function Quiz() {
     const timeSpent = Math.round((Date.now() - startTime) / 1000);
 
     const result = {
-      categoryId: topic,
+      categoryId: category?.id || topic,
       categoryName: category?.name,
       mode,
       totalQuestions: quizQuestions.length,
@@ -94,7 +116,7 @@ export default function Quiz() {
     setTimeout(() => {
       navigate('/result', { state: { result: saved, questions: quizQuestions, answers } });
     }, 500);
-  }, [isFinished, quizQuestions, answers, startTime, topic, category, mode, saveQuizResult, navigate]);
+  }, [isFinished, isAttemptLimitExceeded, quizQuestions, answers, startTime, topic, category, mode, saveQuizResult, navigate]);
 
   const handleTimeUp = useCallback(() => {
     handleSubmit();
@@ -136,6 +158,25 @@ export default function Quiz() {
     );
   }
 
+  // Cảnh báo vượt quá lượt thi
+  if (isAttemptLimitExceeded) {
+    return (
+      <div className="page-center">
+        <div className="glass-card text-center" style={{ maxWidth: '450px' }}>
+          <span style={{ fontSize: '3.5rem', display: 'block', marginBottom: '1rem' }}>🛑</span>
+          <h2 style={{ color: 'var(--error)' }}>Đã hết lượt thi cho phép!</h2>
+          <p className="text-secondary" style={{ margin: '1rem 0' }}>
+            Bộ đề <strong>"{category.name}"</strong> quy định tối đa <strong>{category.maxAttempts} lượt thi</strong>.<br/>
+            Bạn đã hoàn thành {attemptsCount}/{category.maxAttempts} lượt.
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/')}>
+            ← Quay lại Trang chủ
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const answeredCount = Object.keys(answers).length;
   const progress = (answeredCount / quizQuestions.length) * 100;
   const currentQuestion = quizQuestions[currentIndex];
@@ -153,9 +194,16 @@ export default function Quiz() {
               <span className="quiz-category-icon">{category.icon}</span>
               <div>
                 <h2 className="quiz-title">{category.name}</h2>
-                <span className={`badge ${mode === 'practice' ? 'badge-info' : 'badge-warning'}`}>
-                  {mode === 'practice' ? '📚 Luyện tập' : '🎯 Thi thật'}
-                </span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
+                  <span className={`badge ${mode === 'practice' ? 'badge-info' : 'badge-warning'}`}>
+                    {mode === 'practice' ? '📚 Luyện tập' : '🎯 Thi thật'}
+                  </span>
+                  {category.maxAttempts > 0 && (
+                    <span className="badge badge-error">
+                      Lượt {attemptsCount + 1}/{category.maxAttempts}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -181,7 +229,7 @@ export default function Quiz() {
           </div>
         </div>
 
-        {/* Question Navigation Pills (Phù hợp cho cả đề thi lên tới 500 câu) */}
+        {/* Question Navigation Pills */}
         <div className="question-nav animate-fade-in">
           {quizQuestions.map((_, idx) => (
             <button

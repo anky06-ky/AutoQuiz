@@ -1,6 +1,5 @@
 -- =============================================
--- AutoQuiz Database Schema - MySQL 8.0
--- Tạo cơ sở dữ liệu và bảng lưu trữ cho AutoQuiz
+-- AutoQuiz Database Schema - Updated for Custom Settings & Sharing
 -- =============================================
 
 CREATE DATABASE IF NOT EXISTS autoquiz_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -24,6 +23,9 @@ CREATE TABLE IF NOT EXISTS quizzes (
   icon VARCHAR(20) DEFAULT '📂',
   color VARCHAR(20) DEFAULT '#6c5ce7',
   questionCount INT DEFAULT 0,
+  timeLimit INT DEFAULT 30, -- Thời gian làm bài (phút)
+  maxAttempts INT DEFAULT 0, -- Số lượt thi tối đa (0 = không giới hạn)
+  shareCode VARCHAR(50) UNIQUE,
   authorId VARCHAR(50) DEFAULT 'system',
   authorName VARCHAR(100) DEFAULT 'Hệ thống',
   createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
