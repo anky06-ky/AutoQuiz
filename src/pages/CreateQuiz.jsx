@@ -16,7 +16,7 @@ export default function CreateQuiz() {
   const [method, setMethod] = useState('file'); // 'file' | 'text'
   const [engine, setEngine] = useState('smart'); // 'smart' | 'ai'
   const [apiKey, setApiKey] = useState('');
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState(500);
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
