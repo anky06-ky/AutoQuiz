@@ -1,8 +1,15 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import {
+  apiRegister,
+  apiLogin,
+  apiSaveQuiz,
+  apiDeleteQuiz,
+  apiSaveResult,
+  checkServerHealth
+} from '../services/api';
 
 const AuthContext = createContext(null);
 
-// Keys cho localStorage
 const USERS_KEY = 'autoquiz_users';
 const CURRENT_USER_KEY = 'autoquiz_current_user';
 const HISTORY_KEY = 'autoquiz_history';
@@ -11,21 +18,27 @@ const CUSTOM_QUIZZES_KEY = 'autoquiz_custom_quizzes';
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [useMysql, setUseMysql] = useState(false);
 
-  // Load user khi mount
+  // Load user & check MySQL Server
   useEffect(() => {
-    const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch {
-        localStorage.removeItem(CURRENT_USER_KEY);
+    async function init() {
+      const isConnected = await checkServerHealth();
+      setUseMysql(isConnected);
+
+      const savedUser = localStorage.getItem(CURRENT_USER_KEY);
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch {
+          localStorage.removeItem(CURRENT_USER_KEY);
+        }
       }
+      setLoading(false);
     }
-    setLoading(false);
+    init();
   }, []);
 
-  // Lấy danh sách users
   function getUsers() {
     try {
       return JSON.parse(localStorage.getItem(USERS_KEY)) || [];
@@ -35,61 +48,69 @@ export function AuthProvider({ children }) {
   }
 
   // Đăng ký
-  function register(username, password, displayName) {
-    const users = getUsers();
+  async function register(username, password, displayName) {
+    let userInfo = null;
 
-    if (users.find((u) => u.username === username.toLowerCase())) {
-      throw new Error('Tên đăng nhập đã tồn tại!');
+    if (useMysql) {
+      try {
+        userInfo = await apiRegister(username, password, displayName);
+      } catch (err) {
+        throw new Error(err.message);
+      }
+    } else {
+      const users = getUsers();
+      if (users.find((u) => u.username === username.toLowerCase())) {
+        throw new Error('Tên đăng nhập đã tồn tại!');
+      }
+
+      userInfo = {
+        id: Date.now().toString(),
+        username: username.toLowerCase(),
+        password,
+        displayName: displayName || username,
+        createdAt: new Date().toISOString(),
+        avatar: getRandomAvatar(),
+      };
+
+      users.push(userInfo);
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      delete userInfo.password;
     }
 
-    if (username.length < 3) {
-      throw new Error('Tên đăng nhập phải có ít nhất 3 ký tự!');
-    }
-
-    if (password.length < 4) {
-      throw new Error('Mật khẩu phải có ít nhất 4 ký tự!');
-    }
-
-    const newUser = {
-      id: Date.now().toString(),
-      username: username.toLowerCase(),
-      password,
-      displayName: displayName || username,
-      createdAt: new Date().toISOString(),
-      avatar: getRandomAvatar(),
-    };
-
-    users.push(newUser);
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-
-    const userInfo = { ...newUser };
-    delete userInfo.password;
     setUser(userInfo);
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userInfo));
-
     return userInfo;
   }
 
   // Đăng nhập
-  function login(username, password) {
-    const users = getUsers();
-    const found = users.find(
-      (u) => u.username === username.toLowerCase() && u.password === password
-    );
+  async function login(username, password) {
+    let userInfo = null;
 
-    if (!found) {
-      throw new Error('Tên đăng nhập hoặc mật khẩu không đúng!');
+    if (useMysql) {
+      try {
+        userInfo = await apiLogin(username, password);
+      } catch (err) {
+        throw new Error(err.message);
+      }
+    } else {
+      const users = getUsers();
+      const found = users.find(
+        (u) => u.username === username.toLowerCase() && u.password === password
+      );
+
+      if (!found) {
+        throw new Error('Tên đăng nhập hoặc mật khẩu không đúng!');
+      }
+
+      userInfo = { ...found };
+      delete userInfo.password;
     }
 
-    const userInfo = { ...found };
-    delete userInfo.password;
     setUser(userInfo);
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userInfo));
-
     return userInfo;
   }
 
-  // Đăng xuất
   function logout() {
     setUser(null);
     localStorage.removeItem(CURRENT_USER_KEY);
@@ -106,10 +127,13 @@ export function AuthProvider({ children }) {
     };
     history.push(entry);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+
+    if (useMysql) {
+      apiSaveResult(entry);
+    }
     return entry;
   }
 
-  // Lấy lịch sử thi
   function getHistory(userId = null) {
     try {
       const history = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -127,7 +151,6 @@ export function AuthProvider({ children }) {
     return getHistory(user.id);
   }
 
-  // Lấy leaderboard
   function getLeaderboard(categoryId = null) {
     const history = getHistory();
     const filtered = categoryId
@@ -149,7 +172,6 @@ export function AuthProvider({ children }) {
       .slice(0, 20);
   }
 
-  // Thống kê
   function getStats() {
     const myHistory = getMyHistory();
     if (myHistory.length === 0) {
@@ -169,7 +191,7 @@ export function AuthProvider({ children }) {
     return { totalQuizzes, avgScore, bestScore, totalQuestions };
   }
 
-  // ---- QUẢN LÝ BỘ ĐỀ THI TỰ TẠO ----
+  // Quản lý bộ đề thi tự tạo
   function getCustomQuizzes() {
     try {
       return JSON.parse(localStorage.getItem(CUSTOM_QUIZZES_KEY)) || [];
@@ -182,28 +204,39 @@ export function AuthProvider({ children }) {
     const customQuizzes = getCustomQuizzes();
     const existingIndex = customQuizzes.findIndex((q) => q.id === quiz.id);
 
+    const quizItem = {
+      ...quiz,
+      authorId: user ? user.id : 'guest',
+      authorName: user ? user.displayName : 'Guest',
+    };
+
     if (existingIndex >= 0) {
-      customQuizzes[existingIndex] = quiz;
+      customQuizzes[existingIndex] = quizItem;
     } else {
-      customQuizzes.unshift({
-        ...quiz,
-        authorId: user ? user.id : 'guest',
-        authorName: user ? user.displayName : 'Guest',
-      });
+      customQuizzes.unshift(quizItem);
     }
 
     localStorage.setItem(CUSTOM_QUIZZES_KEY, JSON.stringify(customQuizzes));
+
+    if (useMysql) {
+      apiSaveQuiz(quizItem);
+    }
   }
 
   function deleteCustomQuiz(quizId) {
     const customQuizzes = getCustomQuizzes();
     const filtered = customQuizzes.filter((q) => q.id !== quizId);
     localStorage.setItem(CUSTOM_QUIZZES_KEY, JSON.stringify(filtered));
+
+    if (useMysql) {
+      apiDeleteQuiz(quizId);
+    }
   }
 
   const value = {
     user,
     loading,
+    useMysql,
     register,
     login,
     logout,
