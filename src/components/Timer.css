@@ -1,0 +1,87 @@
+.timer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.timer-circle {
+  position: relative;
+  width: 90px;
+  height: 90px;
+}
+
+.timer-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.timer-bg-circle {
+  fill: none;
+  stroke: var(--glass-bg);
+  stroke-width: 4;
+}
+
+.timer-progress-circle {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 283;
+  transition: stroke-dashoffset 1s linear, stroke 0.3s ease;
+}
+
+.timer-warning .timer-progress-circle {
+  stroke: var(--warning);
+}
+
+.timer-danger .timer-progress-circle {
+  stroke: var(--error);
+  animation: pulseStroke 0.5s ease-in-out infinite;
+}
+
+@keyframes pulseStroke {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.timer-display {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.timer-icon {
+  font-size: 1rem;
+}
+
+.timer-text {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.timer-warning .timer-text {
+  color: var(--warning);
+}
+
+.timer-danger .timer-text {
+  color: var(--error);
+  animation: pulseStroke 0.5s ease-in-out infinite;
+}
+
+@media (max-width: 768px) {
+  .timer-circle {
+    width: 70px;
+    height: 70px;
+  }
+
+  .timer-text {
+    font-size: var(--font-size-xs);
+  }
+}

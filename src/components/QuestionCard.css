@@ -1,0 +1,210 @@
+.question-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-2xl);
+}
+
+/* Header */
+.question-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.question-number {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--primary-light);
+  background: rgba(108, 92, 231, 0.1);
+  padding: 0.3rem 0.8rem;
+  border-radius: var(--radius-full);
+}
+
+/* Question Text */
+.question-text {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xl);
+}
+
+/* Options */
+.options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  padding: 1rem 1.2rem;
+  text-align: left;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+}
+
+.option::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 50%);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.option:hover:not(:disabled) {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+  transform: translateX(4px);
+}
+
+.option:hover:not(:disabled)::before {
+  opacity: 1;
+}
+
+.option.selected {
+  background: rgba(108, 92, 231, 0.15);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary-glow);
+}
+
+.option.correct {
+  background: var(--success-bg) !important;
+  border-color: var(--success) !important;
+  box-shadow: 0 0 15px rgba(0, 184, 148, 0.15) !important;
+}
+
+.option.incorrect {
+  background: var(--error-bg) !important;
+  border-color: var(--error) !important;
+  box-shadow: 0 0 15px rgba(255, 118, 117, 0.15) !important;
+}
+
+.option:disabled {
+  cursor: default;
+}
+
+.option-letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg);
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.option.selected .option-letter {
+  background: var(--primary);
+  color: white;
+}
+
+.option.correct .option-letter {
+  background: var(--success);
+  color: white;
+}
+
+.option.incorrect .option-letter {
+  background: var(--error);
+  color: white;
+}
+
+.option-text {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.option-check {
+  font-size: 1.2rem;
+  color: var(--success);
+  font-weight: 700;
+  animation: scaleIn var(--transition-spring);
+}
+
+/* Explanation */
+.explanation {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  padding: var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid;
+}
+
+.explanation-correct {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+
+.explanation-incorrect {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+}
+
+.explanation-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.explanation-content {
+  flex: 1;
+}
+
+.explanation-label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.explanation-content p {
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .question-card {
+    padding: var(--space-lg);
+    border-radius: var(--radius-lg);
+  }
+
+  .question-text {
+    font-size: var(--font-size-base);
+  }
+
+  .option {
+    padding: 0.85rem 1rem;
+    font-size: var(--font-size-sm);
+  }
+
+  .option-letter {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    font-size: var(--font-size-xs);
+  }
+}
