@@ -50,11 +50,10 @@ export default function CreateQuiz() {
         setStatusMessage('📄 Đang đọc dữ liệu từ file...');
         const parsed = await parseFileContent(selectedFile);
 
-        if (parsed.type === 'json_quiz') {
-          // File JSON câu hỏi có sẵn
+        if (parsed.type === 'json_quiz' || parsed.type === 'parsed_quiz') {
           setQuestions(parsed.questions);
           if (parsed.title && !title) setTitle(parsed.title);
-          setStatusMessage(`✅ Đã đọc thành công ${parsed.questions.length} câu hỏi từ file JSON!`);
+          setStatusMessage(`✅ Đã nhận diện & đọc thành công ${parsed.questions.length} câu hỏi (kèm đáp án tô vàng) từ file!`);
           setIsLoading(false);
           return;
         }

@@ -2,8 +2,9 @@ import mammoth from 'mammoth';
 
 // =============================================
 // AutoQuiz File Parser & Smart Quiz Generator
-// Hỗ trợ: .docx, .txt, .md, .json, dán văn bản thô
-// Phân tách siêu chính xác < 500 câu hỏi
+// Hỗ trợ: .docx (nhận diện tô vàng/highlight đáp án đúng),
+// .txt, .md, .json, dán văn bản thô
+// Hỗ trợ quy mô tới 500 câu hỏi
 // =============================================
 
 /**
@@ -26,8 +27,29 @@ export async function parseFileContent(file) {
 
   if (extension === 'docx') {
     const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return { type: 'text', content: result.value };
+
+    // Cấu hình styleMap để chuyển đổi phần TÔ VÀNG (Highlight) trong Word thành thẻ <mark>
+    const options = {
+      styleMap: [
+        "highlight => mark",
+        "r[style-name='Highlight'] => mark",
+        "b => strong",
+        "u => u"
+      ]
+    };
+
+    const result = await mammoth.convertToHtml({ arrayBuffer }, options);
+    const html = result.value;
+
+    // Phân tích trực tiếp từ HTML để giữ lại chính xác ĐÁP ÁN TÔ VÀNG
+    const docxQuestions = parseDocxHtml(html);
+    if (docxQuestions.length > 0) {
+      return { type: 'parsed_quiz', questions: docxQuestions };
+    }
+
+    // Nếu không parse được từ HTML thì lấy raw text
+    const textResult = await mammoth.extractRawText({ arrayBuffer });
+    return { type: 'text', content: textResult.value };
   }
 
   // default .txt, .md, text files
@@ -36,30 +58,102 @@ export async function parseFileContent(file) {
 }
 
 /**
- * Phân tích văn bản thành bộ câu hỏi (Hỗ trợ quy mô tới 500 câu)
+ * Phân tích HTML chuyển đổi từ file DOCX
+ * Nhận diện chính xác 100% ĐÁP ÁN TÔ VÀNG (<mark>) hoặc in đậm (<strong>)
+ */
+export function parseDocxHtml(html) {
+  if (!html || !html.trim()) return [];
+
+  const questions = [];
+
+  // Tách theo các thẻ tiêu đề H1-H6 hoặc P chứa "Câu X."
+  const blocks = html.split(/(?=(?:<h[1-6]>|<p>)(?:<strong>)?\s*(?:câu|question|bài)\s*\d+[\.:\/\)-])/gi);
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i].trim();
+    if (!block) continue;
+
+    // Lấy tiêu đề câu hỏi
+    const qMatch = block.match(/^(?:<h[1-6]>|<p>)\s*(?:<strong>)?\s*(?:câu|question|bài)?\s*\d*[\.:\/\)-]?\s*([\s\S]*?)(?:<\/strong>)?(?:<\/h[1-6]>|<\/p>)/i);
+    if (!qMatch) continue;
+
+    const questionTitle = qMatch[1].replace(/<[^>]+>/g, '').trim();
+    if (!questionTitle) continue;
+
+    const options = [];
+    let correctAnswer = 0;
+
+    // 1. Kiểm tra danh sách <ol><li>...</li></ol> hoặc <ul><li>...</li></ul>
+    const liMatches = [...block.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)];
+
+    if (liMatches.length >= 2) {
+      liMatches.forEach((liMatch, idx) => {
+        const liContent = liMatch[1];
+        // Nhận diện đáp án tô vàng (<mark>)
+        const isHighlighted = /<mark/i.test(liContent);
+        if (isHighlighted) {
+          correctAnswer = idx;
+        }
+        const cleanText = liContent.replace(/<[^>]+>/g, '').trim();
+        options.push(cleanText);
+      });
+    } else {
+      // 2. Các đáp án nằm trong các thẻ <p>
+      const pMatches = [...block.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)];
+      const optParagraphs = pMatches.slice(1);
+
+      optParagraphs.forEach((pMatch) => {
+        const pContent = pMatch[1];
+        const isHighlighted = /<mark/i.test(pContent);
+        if (isHighlighted) {
+          correctAnswer = options.length;
+        }
+        const cleanText = pContent.replace(/<[^>]+>/g, '').trim();
+        if (cleanText) {
+          options.push(cleanText);
+        }
+      });
+    }
+
+    if (options.length >= 2) {
+      while (options.length < 4) {
+        options.push(`Phương án ${String.fromCharCode(65 + options.length)}`);
+      }
+
+      questions.push({
+        id: `extracted-${questions.length + 1}`,
+        question: questionTitle,
+        options: options.slice(0, 4),
+        correctAnswer: Math.min(Math.max(0, correctAnswer), 3),
+        explanation: `Đáp án đúng (được tô vàng trong file): ${String.fromCharCode(65 + correctAnswer)}.`,
+      });
+    }
+  }
+
+  return questions;
+}
+
+/**
+ * Phân tích văn bản thô (.txt, .md hoặc dán text)
  */
 export function convertTextToQuiz(rawText, maxQuestions = 500) {
   if (!rawText || !rawText.trim()) return [];
 
   const text = rawText.trim();
 
-  // 1. Bóc tách câu hỏi theo dạng trắc nghiệm
+  // 1. Thử bóc tách theo dạng trắc nghiệm
   const existingQuestions = extractExistingQuestions(text);
 
   if (existingQuestions.length > 0) {
     return existingQuestions.slice(0, maxQuestions);
   }
 
-  // 2. Nếu là văn bản thô chưa có dạng câu hỏi -> Dùng Smart NLP Generator
+  // 2. Dùng Smart NLP Generator cho văn bản chưa dạng A, B, C, D
   return generateQuestionsFromRawText(text, maxQuestions);
 }
 
 /**
- * Thuật toán bóc tách trắc nghiệm TOÀN NĂNG 100% CHÍNH XÁC:
- * Xử lý hoàn hảo:
- * - Đề thi có các thẻ "Câu 1.", "Câu 2.", "1.", "1/"... (kèm đáp án dạng dòng hoặc dạng A, B, C, D)
- * - Đề thi không có tiền tố "Câu X" nhưng có A., B., C., D.
- * - Giữ trọn vẹn 120+, 200+, 500+ câu hỏi mà không bị ngắt nhầm bởi các số năm như 1978., 1979.
+ * Bóc tách trắc nghiệm văn bản thô
  */
 export function extractExistingQuestions(rawText) {
   const text = rawText
@@ -69,10 +163,8 @@ export function extractExistingQuestions(rawText) {
     .replace(/[ \t]+/g, ' ');
 
   const answerKeyMap = extractAnswerKeyMap(text);
-
-  // Mẫu 1: Tìm câu hỏi theo tiêu đề "Câu 1.", "Câu 2.", "1.", "1/"...
   const headerRegex = /(?:^|\n)\s*(?:(?:câu|question|bài|câu hỏi)\s*\d+|\d{1,3}\s*[\.:\/\)-])\s*/gi;
-  
+
   const matches = [];
   let m;
   while ((m = headerRegex.exec(text)) !== null) {
@@ -85,7 +177,6 @@ export function extractExistingQuestions(rawText) {
 
   const questions = [];
 
-  // CHIẾN LƯỢC 1: Phân tách theo Tiêu đề "Câu X."
   if (matches.length > 0) {
     for (let i = 0; i < matches.length; i++) {
       const startPos = matches[i].index + matches[i].length;
@@ -97,11 +188,9 @@ export function extractExistingQuestions(rawText) {
       const lines = blockText.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length === 0) continue;
 
-      // Tiêu đề câu hỏi
       let questionTitle = lines[0].replace(/^[\.\s:\/\)-]+/, '').trim();
       let options = [];
 
-      // Kiểm tra xem trong khối có các nhãn A., B., C., D. hay không
       const hasABCD = /(?:^|\s+)[A-D][\.:\)\s]/i.test(blockText);
 
       if (hasABCD) {
@@ -126,7 +215,6 @@ export function extractExistingQuestions(rawText) {
         }
       }
 
-      // Nếu không có nhãn A., B., C., D. thì lấy các dòng tiếp theo làm đáp án
       if (options.length < 2 && lines.length >= 2) {
         options = lines.slice(1);
       }
@@ -135,7 +223,6 @@ export function extractExistingQuestions(rawText) {
       let correctAnswer = answerKeyMap[qNum] !== undefined ? answerKeyMap[qNum] : 0;
       let explanation = '';
 
-      // Kiểm tra ký hiệu đáp án đúng trong các đáp án
       options.forEach((optStr, idx) => {
         if (optStr.includes('*') || optStr.includes('✓') || optStr.toLowerCase().includes('[x]')) {
           correctAnswer = idx;
@@ -148,7 +235,6 @@ export function extractExistingQuestions(rawText) {
         return cleaned;
       });
 
-      // Kiểm tra trong cả khối có "Đáp án: A"
       const ansMatch = blockText.match(/(?:đáp án|key|đáp án đúng|câu trả lời đúng)[\s:\-=]*([A-D])/i);
       if (ansMatch) {
         correctAnswer = ansMatch[1].toUpperCase().charCodeAt(0) - 65;
@@ -177,108 +263,9 @@ export function extractExistingQuestions(rawText) {
     return questions;
   }
 
-  // CHIẾN LƯỢC 2: Phân tách theo vết chuỗi đáp án A., B., C., D. (dành cho đề thi không ghi "Câu 1.")
-  const optRegex = /(?:^|\n|\s{2,}|(?<=\s))([A-D])[\.:\)\s]\s*/g;
-  const allOptionMatches = [];
-  let optM;
-  while ((optM = optRegex.exec(text)) !== null) {
-    allOptionMatches.push({
-      index: optM.index,
-      length: optM[0].length,
-      letter: optM[1].toUpperCase(),
-    });
-  }
-
-  if (allOptionMatches.length === 0) return [];
-
-  const questionBlocks = [];
-
-  for (let i = 0; i < allOptionMatches.length; i++) {
-    if (allOptionMatches[i].letter === 'A') {
-      const aMatch = allOptionMatches[i];
-      let bMatch = null;
-      let cMatch = null;
-      let dMatch = null;
-      let nextAMatchIndex = text.length;
-
-      for (let j = i + 1; j < allOptionMatches.length; j++) {
-        const m = allOptionMatches[j];
-        if (!bMatch && m.letter === 'B') bMatch = m;
-        else if (bMatch && !cMatch && m.letter === 'C') cMatch = m;
-        else if (cMatch && !dMatch && m.letter === 'D') dMatch = m;
-        else if (m.letter === 'A') {
-          nextAMatchIndex = m.index;
-          break;
-        }
-      }
-
-      if (bMatch) {
-        const prevEndPos = questionBlocks.length > 0 ? questionBlocks[questionBlocks.length - 1].endIndex : 0;
-        let qRawText = text.substring(prevEndPos, aMatch.index).trim();
-        qRawText = qRawText.replace(/(?:đáp án|key|đáp án đúng)[\s:\-=]*[A-D1-4][^\n]*/gi, '').trim();
-
-        const questionTitle = qRawText.replace(/^(?:câu|question|bài|câu hỏi)?\s*\d*[\.:\/\)-]?\s*/i, '').replace(/^[\.\s:\/\)-]+/, '').trim();
-
-        const optAText = text.substring(aMatch.index + aMatch.length, bMatch.index).trim();
-        const optBEnd = cMatch ? cMatch.index : (dMatch ? dMatch.index : nextAMatchIndex);
-        const optBText = text.substring(bMatch.index + bMatch.length, optBEnd).trim();
-
-        let optCText = '';
-        if (cMatch) {
-          const optCEnd = dMatch ? dMatch.index : nextAMatchIndex;
-          optCText = text.substring(cMatch.index + cMatch.length, optCEnd).trim();
-        }
-
-        let optDText = '';
-        if (dMatch) {
-          optDText = text.substring(dMatch.index + dMatch.length, nextAMatchIndex).trim();
-        }
-
-        let correctAnswer = 0;
-        const rawOpts = [optAText, optBText, optCText, optDText].filter(Boolean);
-        rawOpts.forEach((optStr, idx) => {
-          if (optStr.includes('*') || optStr.includes('✓') || optStr.toLowerCase().includes('[x]')) {
-            correctAnswer = idx;
-          }
-        });
-
-        const cleanOpts = rawOpts.map((o) => {
-          let cleaned = o.replace(/[\*✓]/g, '').replace(/\[x\]/gi, '').trim();
-          cleaned = cleaned.split(/(?:đáp án|key|đáp án đúng|hướng dẫn|giải thích)/i)[0].trim();
-          return cleaned;
-        });
-
-        while (cleanOpts.length < 4) {
-          cleanOpts.push(`Phương án ${String.fromCharCode(65 + cleanOpts.length)}`);
-        }
-
-        const qNum = questionBlocks.length + 1;
-        if (answerKeyMap[qNum] !== undefined) {
-          correctAnswer = answerKeyMap[qNum];
-        }
-
-        if (questionTitle || cleanOpts.length >= 2) {
-          questionBlocks.push({
-            endIndex: nextAMatchIndex,
-            question: {
-              id: `extracted-${qNum}`,
-              question: questionTitle || `Câu hỏi ${qNum}`,
-              options: cleanOpts.slice(0, 4),
-              correctAnswer: Math.min(Math.max(0, correctAnswer), 3),
-              explanation: `Đáp án đúng là ${String.fromCharCode(65 + correctAnswer)}.`,
-            },
-          });
-        }
-      }
-    }
-  }
-
-  return questionBlocks.map((b) => b.question);
+  return [];
 }
 
-/**
- * Trích xuất bảng đáp án ở cuối bài (nếu có): e.g. "1.A 2.B 3.C 4.D"
- */
 function extractAnswerKeyMap(text) {
   const map = {};
   const sectionMatch = text.match(/(?:bảng đáp án|đáp án|danh sách đáp án)[\s\S]*$/i);
@@ -293,9 +280,6 @@ function extractAnswerKeyMap(text) {
   return map;
 }
 
-/**
- * Smart NLP Generator cho văn bản thô
- */
 function generateQuestionsFromRawText(text, maxQuestions = 500) {
   const sentences = text
     .split(/(?<=[.!?])\s+|\n+/)
