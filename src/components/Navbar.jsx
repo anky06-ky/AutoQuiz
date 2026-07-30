@@ -11,6 +11,7 @@ export default function Navbar() {
 
   const navLinks = [
     { path: '/', label: 'Trang chủ', icon: '🏠' },
+    { path: '/create-quiz', label: 'Tạo đề từ file', icon: '✨' },
     { path: '/history', label: 'Lịch sử', icon: '📊' },
     { path: '/leaderboard', label: 'Xếp hạng', icon: '🏆' },
   ];

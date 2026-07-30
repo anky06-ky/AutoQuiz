@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { categories, getRandomQuestions, getQuizTime } from '../data/questions';
+import { prepareQuizWithShuffledAnswers } from '../utils/fileParser';
 import QuestionCard from '../components/QuestionCard';
 import Timer from '../components/Timer';
 import './Quiz.css';
@@ -10,18 +11,24 @@ export default function Quiz() {
   const { topic } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { saveQuizResult } = useAuth();
+  const { saveQuizResult, getCustomQuizzes } = useAuth();
 
   const mode = searchParams.get('mode') || 'exam';
   const count = parseInt(searchParams.get('count')) || 10;
 
-  const category = categories.find((c) => c.id === topic);
+  // Lấy thông tin category mặc định hoặc custom quiz
+  const customQuizzes = useMemo(() => getCustomQuizzes(), [getCustomQuizzes]);
+  const customQuiz = useMemo(() => customQuizzes.find(q => q.id === topic), [customQuizzes, topic]);
 
-  // Sử dụng useMemo để câu hỏi không thay đổi khi re-render
-  const quizQuestions = useMemo(
-    () => getRandomQuestions(topic, count),
-    [topic, count]
-  );
+  const category = customQuiz
+    ? { id: customQuiz.id, name: customQuiz.title, icon: customQuiz.icon || '📂', color: customQuiz.color }
+    : categories.find((c) => c.id === topic);
+
+  // Lấy câu hỏi & XÁO TRỘN ĐÁP ÁN (Shuffle option positions dynamically for each test)
+  const quizQuestions = useMemo(() => {
+    const rawQuestions = getRandomQuestions(topic, count);
+    return prepareQuizWithShuffledAnswers(rawQuestions);
+  }, [topic, count]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -31,7 +38,7 @@ export default function Quiz() {
 
   const totalTime = getQuizTime(quizQuestions.length);
 
-  // Xử lý chọn đáp án
+  // Chọn đáp án
   function handleSelectAnswer(questionIndex, answerIndex) {
     if (isFinished) return;
 
@@ -40,7 +47,6 @@ export default function Quiz() {
       [questionIndex]: answerIndex,
     }));
 
-    // Chế độ luyện tập: hiện kết quả ngay
     if (mode === 'practice') {
       setShowResults((prev) => ({
         ...prev,
@@ -55,14 +61,12 @@ export default function Quiz() {
 
     setIsFinished(true);
 
-    // Hiện tất cả kết quả
     const allResults = {};
     quizQuestions.forEach((_, idx) => {
       allResults[idx] = true;
     });
     setShowResults(allResults);
 
-    // Tính điểm
     let correctCount = 0;
     quizQuestions.forEach((q, idx) => {
       if (answers[idx] === q.correctAnswer) {
@@ -73,7 +77,6 @@ export default function Quiz() {
     const score = Math.round((correctCount / quizQuestions.length) * 100);
     const timeSpent = Math.round((Date.now() - startTime) / 1000);
 
-    // Lưu kết quả
     const result = {
       categoryId: topic,
       categoryName: category?.name,
@@ -88,18 +91,15 @@ export default function Quiz() {
 
     const saved = saveQuizResult(result);
 
-    // Chuyển sang trang kết quả
     setTimeout(() => {
       navigate('/result', { state: { result: saved, questions: quizQuestions, answers } });
     }, 500);
   }, [isFinished, quizQuestions, answers, startTime, topic, category, mode, saveQuizResult, navigate]);
 
-  // Hết giờ
   const handleTimeUp = useCallback(() => {
     handleSubmit();
   }, [handleSubmit]);
 
-  // Navigation
   function goToQuestion(index) {
     setCurrentIndex(index);
   }
@@ -116,7 +116,6 @@ export default function Quiz() {
     }
   }
 
-  // Scroll to top when question changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [currentIndex]);
@@ -125,9 +124,9 @@ export default function Quiz() {
     return (
       <div className="page-center">
         <div className="glass-card text-center" style={{ maxWidth: '400px' }}>
-          <h2>❌ Không tìm thấy đề thi</h2>
+          <h2>❌ Không tìm thấy bộ đề thi</h2>
           <p className="text-secondary" style={{ margin: '1rem 0' }}>
-            Chủ đề không tồn tại hoặc không có câu hỏi.
+            Bộ đề thi không tồn tại hoặc chưa có câu hỏi.
           </p>
           <button className="btn btn-primary" onClick={() => navigate('/')}>
             ← Về trang chủ
@@ -182,7 +181,7 @@ export default function Quiz() {
           </div>
         </div>
 
-        {/* Question Navigation Pills */}
+        {/* Question Navigation Pills (Phù hợp cho cả đề thi lên tới 500 câu) */}
         <div className="question-nav animate-fade-in">
           {quizQuestions.map((_, idx) => (
             <button

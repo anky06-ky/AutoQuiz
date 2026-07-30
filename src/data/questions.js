@@ -1,6 +1,6 @@
 // =============================================
-// AutoQuiz - Ngân hàng câu hỏi
-// 5 chủ đề × 10 câu = 50 câu hỏi
+// AutoQuiz - Ngân hàng câu hỏi & Custom Quiz Support
+// 5 chủ đề mặc định + hỗ trợ bộ đề tự tạo từ file/văn bản người dùng
 // =============================================
 
 export const categories = [
@@ -416,7 +416,7 @@ export const questions = {
         'If I were you, I will go.',
       ],
       correctAnswer: 1,
-      explanation: 'Câu điều kiện loại 2 (giả định không thật ở hiện tại): If + S + were/V-ed, S + would + V.',
+      explanation: 'Câu điều kiện loại 2 (giải định không thật ở hiện tại): If + S + were/V-ed, S + would + V.',
     },
     {
       id: 'ta-5',
@@ -478,21 +478,46 @@ export const questions = {
   ],
 };
 
-// Hàm lấy câu hỏi ngẫu nhiên từ một chủ đề
+// Hàm lấy câu hỏi từ danh sách mặc định HOẶC bộ đề tùy chỉnh trong localStorage
 export function getRandomQuestions(categoryId, count) {
-  const categoryQuestions = questions[categoryId];
-  if (!categoryQuestions) return [];
+  let categoryQuestions = questions[categoryId];
+
+  // Nếu là bộ đề tùy chỉnh bắt đầu bằng "custom-"
+  if (!categoryQuestions && categoryId?.startsWith('custom-')) {
+    try {
+      const customQuizzes = JSON.parse(localStorage.getItem('autoquiz_custom_quizzes')) || [];
+      const found = customQuizzes.find(q => q.id === categoryId);
+      if (found && found.questions) {
+        categoryQuestions = found.questions;
+      }
+    } catch {
+      categoryQuestions = [];
+    }
+  }
+
+  if (!categoryQuestions || categoryQuestions.length === 0) return [];
 
   const shuffled = [...categoryQuestions].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
-// Hàm lấy tất cả câu hỏi từ một chủ đề
+// Lấy toàn bộ câu hỏi
 export function getAllQuestions(categoryId) {
-  return questions[categoryId] || [];
+  if (questions[categoryId]) return questions[categoryId];
+
+  if (categoryId?.startsWith('custom-')) {
+    try {
+      const customQuizzes = JSON.parse(localStorage.getItem('autoquiz_custom_quizzes')) || [];
+      const found = customQuizzes.find(q => q.id === categoryId);
+      return found?.questions || [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
 }
 
-// Thời gian thi (giây) theo số câu hỏi
 export function getQuizTime(questionCount) {
-  return questionCount * 60; // 1 phút mỗi câu
+  return Math.min(questionCount * 60, 3600 * 2); // 1 phút / câu, tối đa 2 giờ
 }

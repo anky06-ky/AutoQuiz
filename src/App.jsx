@@ -8,6 +8,7 @@ import Quiz from './pages/Quiz';
 import Result from './pages/Result';
 import History from './pages/History';
 import Leaderboard from './pages/Leaderboard';
+import CreateQuiz from './pages/CreateQuiz';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -30,6 +31,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/create-quiz"
+          element={
+            <ProtectedRoute>
+              <CreateQuiz />
             </ProtectedRoute>
           }
         />

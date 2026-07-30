@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 const USERS_KEY = 'autoquiz_users';
 const CURRENT_USER_KEY = 'autoquiz_current_user';
 const HISTORY_KEY = 'autoquiz_history';
+const CUSTOM_QUIZZES_KEY = 'autoquiz_custom_quizzes';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -37,7 +38,6 @@ export function AuthProvider({ children }) {
   function register(username, password, displayName) {
     const users = getUsers();
 
-    // Kiểm tra username đã tồn tại
     if (users.find((u) => u.username === username.toLowerCase())) {
       throw new Error('Tên đăng nhập đã tồn tại!');
     }
@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
     const newUser = {
       id: Date.now().toString(),
       username: username.toLowerCase(),
-      password, // Trong thực tế nên hash password
+      password,
       displayName: displayName || username,
       createdAt: new Date().toISOString(),
       avatar: getRandomAvatar(),
@@ -62,7 +62,6 @@ export function AuthProvider({ children }) {
     users.push(newUser);
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
 
-    // Tự động đăng nhập
     const userInfo = { ...newUser };
     delete userInfo.password;
     setUser(userInfo);
@@ -101,8 +100,8 @@ export function AuthProvider({ children }) {
     const history = getHistory();
     const entry = {
       ...result,
-      userId: user.id,
-      userName: user.displayName,
+      userId: user ? user.id : 'guest',
+      userName: user ? user.displayName : 'Guest',
       timestamp: new Date().toISOString(),
     };
     history.push(entry);
@@ -123,7 +122,6 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Lấy lịch sử của user hiện tại
   function getMyHistory() {
     if (!user) return [];
     return getHistory(user.id);
@@ -136,7 +134,6 @@ export function AuthProvider({ children }) {
       ? history.filter((h) => h.categoryId === categoryId)
       : history;
 
-    // Nhóm theo user, lấy điểm cao nhất
     const userBest = {};
     filtered.forEach((entry) => {
       const key = categoryId
@@ -152,7 +149,7 @@ export function AuthProvider({ children }) {
       .slice(0, 20);
   }
 
-  // Thống kê nhanh
+  // Thống kê
   function getStats() {
     const myHistory = getMyHistory();
     if (myHistory.length === 0) {
@@ -172,6 +169,38 @@ export function AuthProvider({ children }) {
     return { totalQuizzes, avgScore, bestScore, totalQuestions };
   }
 
+  // ---- QUẢN LÝ BỘ ĐỀ THI TỰ TẠO ----
+  function getCustomQuizzes() {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_QUIZZES_KEY)) || [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveCustomQuiz(quiz) {
+    const customQuizzes = getCustomQuizzes();
+    const existingIndex = customQuizzes.findIndex((q) => q.id === quiz.id);
+
+    if (existingIndex >= 0) {
+      customQuizzes[existingIndex] = quiz;
+    } else {
+      customQuizzes.unshift({
+        ...quiz,
+        authorId: user ? user.id : 'guest',
+        authorName: user ? user.displayName : 'Guest',
+      });
+    }
+
+    localStorage.setItem(CUSTOM_QUIZZES_KEY, JSON.stringify(customQuizzes));
+  }
+
+  function deleteCustomQuiz(quizId) {
+    const customQuizzes = getCustomQuizzes();
+    const filtered = customQuizzes.filter((q) => q.id !== quizId);
+    localStorage.setItem(CUSTOM_QUIZZES_KEY, JSON.stringify(filtered));
+  }
+
   const value = {
     user,
     loading,
@@ -183,6 +212,9 @@ export function AuthProvider({ children }) {
     getMyHistory,
     getLeaderboard,
     getStats,
+    getCustomQuizzes,
+    saveCustomQuiz,
+    deleteCustomQuiz,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -196,7 +228,6 @@ export function useAuth() {
   return context;
 }
 
-// Random avatar emoji
 function getRandomAvatar() {
   const avatars = ['🦊', '🐱', '🐼', '🦁', '🐯', '🐻', '🦄', '🐲', '🦅', '🐬', '🦋', '🌟', '🚀', '💎', '🎯', '⚡'];
   return avatars[Math.floor(Math.random() * avatars.length)];
