@@ -4,8 +4,8 @@
 // Nếu Server MySQL offline -> Tự động Fallback sang LocalStorage
 // =============================================
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
-export const hasConfiguredServer = Boolean(import.meta.env.VITE_API_BASE_URL || !import.meta.env.DEV);
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '');
+export const hasConfiguredServer = Boolean(import.meta.env.VITE_API_BASE_URL);
 const TOKEN_KEY = 'autoquiz_access_token';
 const REQUEST_TIMEOUT = import.meta.env.DEV ? 15000 : 65000;
 

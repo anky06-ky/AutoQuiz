@@ -1,6 +1,6 @@
 # Triển khai AutoQuiz lên Render
 
-AutoQuiz chạy giao diện và API trên cùng một Render Web Service. Dữ liệu lâu dài nằm trong MySQL; không lưu cơ sở dữ liệu trong thư mục của Web Service vì hệ thống tệp này bị xóa khi triển khai lại.
+AutoQuiz chạy giao diện và API trên cùng một Render Web Service. `render.yaml` tự đặt `VITE_API_BASE_URL=/api` cho bản build này. Dữ liệu lâu dài nằm trong MySQL; không lưu cơ sở dữ liệu trong thư mục của Web Service vì hệ thống tệp này bị xóa khi triển khai lại.
 
 > Lưu ý chi phí: Web Service có thể chọn gói Free, nhưng MySQL tự quản lý trên Render cần Private Service và Persistent Disk trả phí. Nếu muốn tiết kiệm, dùng một dịch vụ MySQL bên ngoài rồi điền thông tin kết nối ở bước 2.
 
