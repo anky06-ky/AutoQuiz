@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import { initDatabase, getPool, isConnected } from './db.js';
 import { normalizeQuiz } from '../src/utils/quizData.js';
 import { replaceQuizQuestions } from './quizRepository.js';
+import { createAccountRouter } from './accountRoutes.js';
+import { createAccountRepository } from './accountRepository.js';
 
 dotenv.config();
 
@@ -21,59 +23,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.post('/api/auth/register', async (req, res) => {
-  const { username, password, displayName } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Tên đăng nhập và mật khẩu không được để trống!' });
-  }
-
-  if (!isConnected()) {
-    return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
-  }
-
-  try {
-    const pool = getPool();
-    const [existing] = await pool.query('SELECT id FROM users WHERE username = ?', [username.toLowerCase()]);
-    if (existing.length > 0) {
-      return res.status(400).json({ error: 'Tên đăng nhập đã tồn tại!' });
-    }
-
-    const userId = Date.now().toString();
-    const avatar = ['🦊', '🐱', '🐼', '🦁', '🐯', '🐻', '🦄', '🐲', '⚡'][Math.floor(Math.random() * 9)];
-
-    await pool.query(
-      'INSERT INTO users (id, username, password, displayName, avatar) VALUES (?, ?, ?, ?, ?)',
-      [userId, username.toLowerCase(), password, displayName || username, avatar]
-    );
-
-    res.json({ id: userId, username: username.toLowerCase(), displayName: displayName || username, avatar });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!isConnected()) {
-    return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
-  }
-
-  try {
-    const pool = getPool();
-    const [rows] = await pool.query(
-      'SELECT id, username, displayName, avatar FROM users WHERE username = ? AND password = ?',
-      [username.toLowerCase(), password]
-    );
-
-    if (rows.length === 0) {
-      return res.status(400).json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng!' });
-    }
-
-    res.json(rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+app.use('/api', createAccountRouter(createAccountRepository(getPool), isConnected));
 
 app.get('/api/quizzes', async (req, res) => {
   if (!isConnected()) {
@@ -82,7 +32,9 @@ app.get('/api/quizzes', async (req, res) => {
 
   try {
     const pool = getPool();
-    const [rows] = await pool.query('SELECT * FROM quizzes ORDER BY createdAt DESC');
+    const [rows] = req.account.role === 'admin'
+      ? await pool.query('SELECT * FROM quizzes ORDER BY createdAt DESC')
+      : await pool.query('SELECT * FROM quizzes WHERE authorId = ? ORDER BY createdAt DESC', [req.account.id]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -102,6 +54,7 @@ app.get('/api/quizzes/:id', async (req, res) => {
     }
 
     const quiz = quizRows[0];
+    if (quiz.authorId !== req.account.id && req.account.role !== 'admin') return res.status(403).json({ error: 'Bạn không có quyền truy cập bộ đề này.' });
     const [qRows] = await pool.query('SELECT * FROM questions WHERE quizId = ? ORDER BY id ASC', [quiz.id]);
 
     const formattedQuestions = qRows.map(q => ({
@@ -130,7 +83,7 @@ app.post('/api/quizzes', async (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
-  const { id, title, description, icon, color, questions, authorId, authorName, timeLimit, maxAttempts, shareCode } = quiz;
+  const { id, title, description, icon, color, questions, timeLimit, maxAttempts, shareCode } = quiz;
 
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -145,12 +98,18 @@ app.post('/api/quizzes', async (req, res) => {
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
+    const [existing] = await conn.query('SELECT id, authorId FROM quizzes WHERE id = ? OR shareCode = ? FOR UPDATE', [quizId, code]);
+    if (existing.some((item) => item.id !== quizId || (item.authorId !== req.account.id && req.account.role !== 'admin'))) {
+      await conn.rollback();
+      return res.status(403).json({ error: 'Bộ đề hoặc mã chia sẻ này không thuộc quyền quản lý của bạn.' });
+    }
+
     await conn.query(
       `INSERT INTO quizzes (id, title, description, icon, color, questionCount, timeLimit, maxAttempts, shareCode, authorId, authorName)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE title=?, description=?, questionCount=?, timeLimit=?, maxAttempts=?, shareCode=?`,
       [
-        quizId, title, description || '', icon || '📂', color || '#6c5ce7', questions.length, timeLimit || 30, maxAttempts || 0, code, authorId || 'guest', authorName || 'Guest',
+        quizId, title, description || '', icon || '📂', color || '#6c5ce7', questions.length, timeLimit || 30, maxAttempts || 0, code, req.account.id, req.account.displayName,
         title, description || '', questions.length, timeLimit || 30, maxAttempts || 0, code
       ]
     );
@@ -174,7 +133,10 @@ app.delete('/api/quizzes/:id', async (req, res) => {
 
   try {
     const pool = getPool();
-    await pool.query('DELETE FROM quizzes WHERE id = ?', [req.params.id]);
+    const [result] = req.account.role === 'admin'
+      ? await pool.query('DELETE FROM quizzes WHERE id = ?', [req.params.id])
+      : await pool.query('DELETE FROM quizzes WHERE id = ? AND authorId = ?', [req.params.id, req.account.id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Không tìm thấy bộ đề thuộc quyền quản lý của bạn.' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -182,7 +144,7 @@ app.delete('/api/quizzes/:id', async (req, res) => {
 });
 
 app.post('/api/history', async (req, res) => {
-  const { userId, userName, quizId, categoryName, mode, totalQuestions, correctCount, score, timeSpent } = req.body;
+  const { quizId, categoryId, categoryName, mode, totalQuestions, correctCount, score, timeSpent } = req.body;
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
   }
@@ -192,7 +154,7 @@ app.post('/api/history', async (req, res) => {
     await pool.query(
       `INSERT INTO quiz_history (userId, userName, quizId, categoryName, mode, totalQuestions, correctCount, score, timeSpent)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId || 'guest', userName || 'Guest', quizId || 'general', categoryName || 'Chủ đề', mode || 'exam', totalQuestions, correctCount, score, timeSpent]
+      [req.account.id, req.account.displayName, quizId || categoryId || 'general', categoryName || 'Chủ đề', mode || 'exam', totalQuestions, correctCount, score, timeSpent]
     );
 
     res.json({ success: true });
@@ -202,6 +164,7 @@ app.post('/api/history', async (req, res) => {
 });
 
 app.get('/api/history/user/:userId', async (req, res) => {
+  if (req.params.userId !== req.account.id && req.account.role !== 'admin') return res.status(403).json({ error: 'Bạn không có quyền xem lịch sử tài khoản này.' });
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
   }
@@ -236,7 +199,7 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 
 initDatabase().then(() => {
-  app.listen(PORT, () => {
+  app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
     console.log(`🚀 AutoQuiz Backend Server đang chạy tại: http://localhost:${PORT}`);
   });
 });

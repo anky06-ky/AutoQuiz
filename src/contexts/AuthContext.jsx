@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useSyncExternalStore } from 'react';
 import { quizStore } from '../services/quizStore';
+import { localAccounts, USERS_KEY } from '../services/localAccounts';
+import { accountRequest, clearAccessToken, hasAccessToken, hasConfiguredServer } from '../services/api';
 import {
   apiRegister,
   apiLogin,
@@ -11,7 +13,6 @@ import {
 
 const AuthContext = createContext(null);
 
-const USERS_KEY = 'autoquiz_users';
 const CURRENT_USER_KEY = 'autoquiz_current_user';
 const HISTORY_KEY = 'autoquiz_history';
 
@@ -19,102 +20,100 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [useMysql, setUseMysql] = useState(false);
+  const [authError, setAuthError] = useState('');
   const customQuizzes = useSyncExternalStore(quizStore.subscribe, quizStore.getSnapshot);
 
-  // Load user & check MySQL Server
-  useEffect(() => {
-    async function init() {
-      const isConnected = await checkServerHealth();
-      setUseMysql(isConnected);
+  function persistUser(account) {
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(account));
+    setUser(account);
+    setAuthError('');
+    return account;
+  }
 
-      const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-      if (savedUser) {
-        try {
-          setUser(JSON.parse(savedUser));
-        } catch {
-          localStorage.removeItem(CURRENT_USER_KEY);
+  useEffect(() => {
+    let cancelled = false;
+    async function init() {
+      try {
+        const connected = await checkServerHealth();
+        if (cancelled) return;
+        setUseMysql(connected);
+        const saved = JSON.parse(localStorage.getItem(CURRENT_USER_KEY) || 'null');
+        if (hasAccessToken()) {
+          const account = await accountRequest('/auth/me');
+          if (!cancelled) persistUser({ ...account, authSource: 'server' });
+        } else if (saved && saved.authSource !== 'server') {
+          const account = localAccounts.get(saved.id);
+          if (account.passwordChangedAt !== (saved.passwordChangedAt || null)) throw new Error('Mật khẩu đã thay đổi. Hãy đăng nhập lại.');
+          if (!cancelled) persistUser(account);
         }
-      }
-      setLoading(false);
+      } catch (err) {
+        if (!cancelled) { setUser(null); setAuthError(err.message); }
+      } finally { if (!cancelled) setLoading(false); }
     }
     init();
+    return () => { cancelled = true; };
   }, []);
 
-  function getUsers() {
-    try {
-      return JSON.parse(localStorage.getItem(USERS_KEY)) || [];
-    } catch {
-      return [];
+  useEffect(() => {
+    if (!user) return;
+    function expireServerSession() {
+      if (user.authSource !== 'server') return;
+      setUser(null);
+      localStorage.removeItem(CURRENT_USER_KEY);
+      setAuthError('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
     }
+    function refreshLocal(event) {
+      if (user.authSource === 'server' || (event.key !== USERS_KEY && event.key !== CURRENT_USER_KEY && event.key !== null)) return;
+      try {
+        const saved = JSON.parse(localStorage.getItem(CURRENT_USER_KEY) || 'null');
+        if (!saved || saved.id !== user.id) { setUser(null); return; }
+        const account = localAccounts.get(user.id);
+        if (account.passwordChangedAt !== user.passwordChangedAt) { setUser(null); return; }
+        setUser(account);
+      } catch { setUser(null); }
+    }
+    window.addEventListener('storage', refreshLocal);
+    window.addEventListener('autoquiz-session-expired', expireServerSession);
+    return () => {
+      window.removeEventListener('storage', refreshLocal);
+      window.removeEventListener('autoquiz-session-expired', expireServerSession);
+    };
+  }, [user]);
+
+  async function register(username, password, displayName, source = useMysql ? 'server' : 'local') {
+    const account = source === 'server' ? await apiRegister(username, password, displayName) : await localAccounts.register(username, password, displayName);
+    if (account.authSource === 'local') clearAccessToken();
+    return persistUser(account);
   }
 
-  // Đăng ký
-  async function register(username, password, displayName) {
-    let userInfo = null;
-
-    if (useMysql) {
-      try {
-        userInfo = await apiRegister(username, password, displayName);
-      } catch (err) {
-        throw new Error(err.message);
-      }
-    } else {
-      const users = getUsers();
-      if (users.find((u) => u.username === username.toLowerCase())) {
-        throw new Error('Tên đăng nhập đã tồn tại!');
-      }
-
-      userInfo = {
-        id: Date.now().toString(),
-        username: username.toLowerCase(),
-        password,
-        displayName: displayName || username,
-        createdAt: new Date().toISOString(),
-        avatar: getRandomAvatar(),
-      };
-
-      users.push(userInfo);
-      localStorage.setItem(USERS_KEY, JSON.stringify(users));
-      delete userInfo.password;
-    }
-
-    setUser(userInfo);
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userInfo));
-    return userInfo;
-  }
-
-  // Đăng nhập
-  async function login(username, password) {
-    let userInfo = null;
-
-    if (useMysql) {
-      try {
-        userInfo = await apiLogin(username, password);
-      } catch (err) {
-        throw new Error(err.message);
-      }
-    } else {
-      const users = getUsers();
-      const found = users.find(
-        (u) => u.username === username.toLowerCase() && u.password === password
-      );
-
-      if (!found) {
-        throw new Error('Tên đăng nhập hoặc mật khẩu không đúng!');
-      }
-
-      userInfo = { ...found };
-      delete userInfo.password;
-    }
-
-    setUser(userInfo);
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userInfo));
-    return userInfo;
+  async function login(username, password, source = useMysql ? 'server' : 'local') {
+    const account = source === 'server' ? await apiLogin(username, password) : await localAccounts.login(username, password);
+    if (account.authSource === 'local') clearAccessToken();
+    return persistUser(account);
   }
 
   function logout() {
-    setUser(null);
+    if (user?.authSource === 'server') accountRequest('/auth/logout', { method: 'POST' }).catch(() => {});
+    clearAccessToken();
     localStorage.removeItem(CURRENT_USER_KEY);
+    setUser(null);
+  }
+
+  async function updateProfile(profile) {
+    if (!user) throw new Error('Hãy đăng nhập lại.');
+    const updated = user.authSource === 'server'
+      ? { ...await accountRequest('/account/me', { method: 'PUT', body: JSON.stringify(profile) }), authSource: 'server' }
+      : localAccounts.updateProfile(user.id, profile);
+    return persistUser(updated);
+  }
+
+  async function changePassword(currentPassword, newPassword) {
+    if (!user) throw new Error('Hãy đăng nhập lại.');
+    if (user.authSource === 'server') await accountRequest('/account/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
+    else await localAccounts.changePassword(user.id, currentPassword, newPassword);
+    clearAccessToken();
+    localStorage.removeItem(CURRENT_USER_KEY);
+    setUser(null);
   }
 
   // Lưu kết quả thi
@@ -129,7 +128,7 @@ export function AuthProvider({ children }) {
     history.push(entry);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 
-    if (useMysql) {
+    if (user?.authSource === 'server') {
       apiSaveResult(entry);
     }
     return entry;
@@ -199,14 +198,14 @@ export function AuthProvider({ children }) {
 
   function saveCustomQuiz(quiz, options) {
     const result = quizStore.save(quiz, user, options);
-    if (useMysql && !result.duplicate) apiSaveQuiz(result.quiz);
+    if (user?.authSource === 'server' && !result.duplicate) apiSaveQuiz(result.quiz);
     return result;
   }
 
   function deleteCustomQuiz(quizId) {
     quizStore.remove(quizId);
 
-    if (useMysql) {
+    if (user?.authSource === 'server') {
       apiDeleteQuiz(quizId);
     }
   }
@@ -215,6 +214,10 @@ export function AuthProvider({ children }) {
     user,
     loading,
     useMysql,
+    serverAvailable: useMysql || hasConfiguredServer,
+    authError,
+    updateProfile,
+    changePassword,
     register,
     login,
     logout,
@@ -239,11 +242,6 @@ export function useAuth() {
     throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
-}
-
-function getRandomAvatar() {
-  const avatars = ['🦊', '🐱', '🐼', '🦁', '🐯', '🐻', '🦄', '🐲', '🦅', '🐬', '🦋', '🌟', '🚀', '💎', '🎯', '⚡'];
-  return avatars[Math.floor(Math.random() * avatars.length)];
 }
 
 export default AuthContext;

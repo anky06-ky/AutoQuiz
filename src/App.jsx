@@ -10,6 +10,8 @@ import History from './pages/History';
 import Leaderboard from './pages/Leaderboard';
 import CreateQuiz from './pages/CreateQuiz';
 import EditQuiz from './pages/EditQuiz';
+import Account from './pages/Account';
+import AdminAccounts from './pages/AdminAccounts';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -27,6 +29,8 @@ function AppRoutes() {
         />
 
         {/* Protected */}
+        <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
+        <Route path="/admin/accounts" element={<ProtectedRoute><AdminAccounts /></ProtectedRoute>} />
         <Route
           path="/"
           element={

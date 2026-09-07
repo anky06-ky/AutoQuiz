@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './Login.css';
 
@@ -10,7 +10,9 @@ export default function Login() {
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, register } = useAuth();
+  const [accountSource, setAccountSource] = useState('server');
+  const { login, register, authError, serverAvailable, loading } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
@@ -20,9 +22,9 @@ export default function Login() {
 
     try {
       if (isLogin) {
-        login(username, password);
+        await login(username, password, serverAvailable ? accountSource : 'local');
       } else {
-        register(username, password, displayName);
+        await register(username, password, displayName, serverAvailable ? accountSource : 'local');
       }
       navigate('/');
     } catch (err) {
@@ -39,6 +41,8 @@ export default function Login() {
     setPassword('');
     setDisplayName('');
   }
+
+  if (loading) return <div className="page-center"><p role="status">Đang kiểm tra tài khoản…</p></div>;
 
   return (
     <div className="login-page page-center" id="login-page">
@@ -70,7 +74,7 @@ export default function Login() {
             <button
               type="button"
               className={`login-tab ${isLogin ? 'active' : ''}`}
-              onClick={() => toggleMode()}
+              onClick={() => { if (!isLogin) toggleMode(); }}
               id="login-tab"
             >
               Đăng nhập
@@ -78,7 +82,7 @@ export default function Login() {
             <button
               type="button"
               className={`login-tab ${!isLogin ? 'active' : ''}`}
-              onClick={() => toggleMode()}
+              onClick={() => { if (isLogin) toggleMode(); }}
               id="register-tab"
             >
               Đăng ký
@@ -90,6 +94,8 @@ export default function Login() {
           </div>
 
           {/* Error Message */}
+          {location.state?.message && <p className="text-secondary" role="status">{location.state.message}</p>}
+          {authError && !error && <div className="login-error" role="alert">{authError}</div>}
           {error && (
             <div className="login-error animate-fade-in-down" id="login-error">
               <span>⚠️</span> {error}
@@ -97,6 +103,7 @@ export default function Login() {
           )}
 
           {/* Fields */}
+          {serverAvailable && <label className="input-group">Loại tài khoản<select className="input" value={accountSource} onChange={(event) => { setAccountSource(event.target.value); setError(''); }}><option value="server">Trực tuyến · máy chủ</option><option value="local">Đã lưu trên trình duyệt này</option></select></label>}
           <div className="login-fields">
             {!isLogin && (
               <div className="input-group animate-fade-in-up">
@@ -137,6 +144,8 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
+                minLength={isLogin ? undefined : 8}
+                maxLength={128}
               />
             </div>
           </div>

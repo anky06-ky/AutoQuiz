@@ -46,6 +46,25 @@ export async function initDatabase() {
       );
     `);
 
+    // Upgrade existing installations without replacing user records.
+    const [userColumns] = await pool.query('SHOW COLUMNS FROM users');
+    const columnNames = new Set(userColumns.map((column) => column.Field));
+    for (const [name, definition] of [
+      ['role', "VARCHAR(20) NOT NULL DEFAULT 'user'"],
+      ['status', "VARCHAR(20) NOT NULL DEFAULT 'active'"],
+      ['passwordChangedAt', 'DATETIME(3) NULL'],
+    ]) {
+      if (!columnNames.has(name)) await pool.query(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
+    }
+    await pool.query(`CREATE TABLE IF NOT EXISTS auth_sessions (
+      tokenHash CHAR(64) PRIMARY KEY,
+      userId VARCHAR(50) NOT NULL,
+      expiresAt DATETIME NOT NULL,
+      INDEX idx_auth_sessions_user (userId),
+      INDEX idx_auth_sessions_expiry (expiresAt),
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quizzes (
         id VARCHAR(50) PRIMARY KEY,

@@ -12,10 +12,22 @@ CREATE TABLE IF NOT EXISTS users (
   password VARCHAR(255) NOT NULL,
   displayName VARCHAR(100) NOT NULL,
   avatar VARCHAR(10) DEFAULT '⚡',
+  role VARCHAR(20) NOT NULL DEFAULT 'user',
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  passwordChangedAt DATETIME(3) NULL,
   createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Bảng Bộ đề thi (quizzes)
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  tokenHash CHAR(64) PRIMARY KEY,
+  userId VARCHAR(50) NOT NULL,
+  expiresAt DATETIME NOT NULL,
+  INDEX idx_auth_sessions_user (userId),
+  INDEX idx_auth_sessions_expiry (expiresAt),
+  FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS quizzes (
   id VARCHAR(50) PRIMARY KEY,
   title VARCHAR(255) NOT NULL,

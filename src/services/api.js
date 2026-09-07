@@ -5,6 +5,42 @@
 // =============================================
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '');
+export const hasConfiguredServer = Boolean(import.meta.env.VITE_API_BASE_URL);
+const TOKEN_KEY = 'autoquiz_access_token';
+
+export function clearAccessToken() { sessionStorage.removeItem(TOKEN_KEY); }
+export function hasAccessToken() { return Boolean(sessionStorage.getItem(TOKEN_KEY)); }
+
+export async function accountRequest(path, options = {}) {
+  if (!API_BASE_URL) throw new Error('Chưa cấu hình máy chủ quản lý tài khoản.');
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch { throw new Error('Không kết nối được máy chủ. Hãy thử lại, dữ liệu chưa được thay đổi trên trình duyệt.'); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401 && token && !['/auth/login', '/auth/register'].includes(path)) {
+      clearAccessToken();
+      window.dispatchEvent(new Event('autoquiz-session-expired'));
+    }
+    const error = new Error(data.error || 'Không thực hiện được thao tác.');
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function authenticate(path, body) {
+  const data = await accountRequest(path, { method: 'POST', body: JSON.stringify(body) });
+  if (!data.token || !data.user) throw new Error('Máy chủ cần được cập nhật để hỗ trợ quản lý tài khoản.');
+  sessionStorage.setItem(TOKEN_KEY, data.token);
+  return { ...data.user, authSource: 'server' };
+}
 
 export async function checkServerHealth() {
   if (!API_BASE_URL) return false;
@@ -22,49 +58,18 @@ export async function checkServerHealth() {
 
 // 1. Đăng ký
 export async function apiRegister(username, password, displayName) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, displayName }),
-    });
-
-    if (res.ok) {
-      return await res.json();
-    }
-    const err = await res.json();
-    throw new Error(err.error || 'Lỗi đăng ký MySQL');
-  } catch (err) {
-    throw err;
-  }
+  return authenticate('/auth/register', { username, password, displayName });
 }
 
 // 2. Đăng nhập
 export async function apiLogin(username, password) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-
-    if (res.ok) {
-      return await res.json();
-    }
-    const err = await res.json();
-    throw new Error(err.error || 'Lỗi đăng nhập');
-  } catch (err) {
-    throw err;
-  }
+  return authenticate('/auth/login', { username, password });
 }
 
 // 3. Lấy bộ đề thi từ MySQL
 export async function apiGetQuizzes() {
   try {
-    const res = await fetch(`${API_BASE_URL}/quizzes`, { signal: AbortSignal.timeout(2000) });
-    if (res.ok) {
-      return await res.json();
-    }
+    return await accountRequest('/quizzes');
   } catch {
     // Fallback
   }
@@ -74,10 +79,7 @@ export async function apiGetQuizzes() {
 // 4. Lấy chi tiết câu hỏi từ MySQL
 export async function apiGetQuizById(quizId) {
   try {
-    const res = await fetch(`${API_BASE_URL}/quizzes/${quizId}`, { signal: AbortSignal.timeout(2000) });
-    if (res.ok) {
-      return await res.json();
-    }
+    return await accountRequest(`/quizzes/${encodeURIComponent(quizId)}`);
   } catch {
     // Fallback
   }
@@ -87,14 +89,10 @@ export async function apiGetQuizById(quizId) {
 // 5. Lưu bộ đề thi mới vào MySQL
 export async function apiSaveQuiz(quiz) {
   try {
-    const res = await fetch(`${API_BASE_URL}/quizzes`, {
+    return await accountRequest('/quizzes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(quiz),
     });
-    if (res.ok) {
-      return await res.json();
-    }
   } catch {
     // Fallback
   }
@@ -104,7 +102,7 @@ export async function apiSaveQuiz(quiz) {
 // 6. Xóa bộ đề thi khỏi MySQL
 export async function apiDeleteQuiz(quizId) {
   try {
-    await fetch(`${API_BASE_URL}/quizzes/${quizId}`, { method: 'DELETE' });
+    await accountRequest(`/quizzes/${encodeURIComponent(quizId)}`, { method: 'DELETE' });
   } catch {
     // Fallback
   }
@@ -113,9 +111,8 @@ export async function apiDeleteQuiz(quizId) {
 // 7. Lưu kết quả thi vào MySQL
 export async function apiSaveResult(result) {
   try {
-    await fetch(`${API_BASE_URL}/history`, {
+    await accountRequest('/history', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(result),
     });
   } catch {

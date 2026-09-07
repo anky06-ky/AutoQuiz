@@ -10,6 +10,9 @@ let AuthContext;
 let Dashboard;
 let EditQuiz;
 let Quiz;
+let Account;
+let AdminAccounts;
+let Navbar;
 
 before(async () => {
   server = await createServer({ server: { middlewareMode: true, ws: false }, appType: 'custom', logLevel: 'error' });
@@ -17,6 +20,9 @@ before(async () => {
   Dashboard = (await server.ssrLoadModule('/src/pages/Dashboard.jsx')).default;
   EditQuiz = (await server.ssrLoadModule('/src/pages/EditQuiz.jsx')).default;
   Quiz = (await server.ssrLoadModule('/src/pages/Quiz.jsx')).default;
+  Account = (await server.ssrLoadModule('/src/pages/Account.jsx')).default;
+  AdminAccounts = (await server.ssrLoadModule('/src/pages/AdminAccounts.jsx')).default;
+  Navbar = (await server.ssrLoadModule('/src/components/Navbar.jsx')).default;
 });
 
 after(async () => { await server?.close(); });
@@ -70,4 +76,31 @@ test('an invalid legacy quiz opens a repair message instead of a broken question
   });
   assert.match(html, /Bộ đề có câu hỏi cần kiểm tra/);
   assert.doesNotMatch(html, /id="pill-/);
+});
+
+test('account page exposes profile and password forms and clearly labels device-local accounts', () => {
+  const html = render(Account, '/account', '/account', { user: { id: 'local', username: 'learner', displayName: 'Người học', avatar: '🐼', authSource: 'local' } });
+  assert.match(html, /Thông tin cá nhân/);
+  assert.match(html, /Mật khẩu hiện tại/);
+  assert.match(html, /Nhập lại mật khẩu mới/);
+  assert.match(html, /Trên trình duyệt này/);
+});
+
+test('admin page rejects a client-only admin flag and ordinary server users', () => {
+  const local = render(AdminAccounts, '/admin/accounts', '/admin/accounts', { user: { id: 'local', role: 'admin', authSource: 'local' } });
+  assert.match(local, /cần tài khoản admin trên máy chủ/);
+  assert.doesNotMatch(local, /Tạo tài khoản<\/summary>/);
+  const ordinary = render(AdminAccounts, '/admin/accounts', '/admin/accounts', { user: { id: 'user', role: 'user', authSource: 'server' } });
+  assert.match(ordinary, /chưa có quyền quản trị/);
+});
+
+test('authenticated server admin sees management controls and account navigation', () => {
+  const user = { id: 'admin', username: 'admin06', displayName: 'Admin', role: 'admin', authSource: 'server' };
+  const html = render(AdminAccounts, '/admin/accounts', '/admin/accounts', { user });
+  assert.match(html, /QUẢN TRỊ HỆ THỐNG/);
+  assert.match(html, /Lọc vai trò/);
+  assert.match(html, /Tạo tài khoản/);
+  const navbar = render(Navbar, '/', '/', { user });
+  assert.match(navbar, /href="\/account"/);
+  assert.match(navbar, /href="\/admin\/accounts"/);
 });

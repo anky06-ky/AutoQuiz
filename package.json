@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "admin": "node server/setAdmin.js",
     "test": "node --test tests/*.test.js",
     "dev": "vite",
     "server": "node server/index.js",

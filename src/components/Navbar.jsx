@@ -14,6 +14,7 @@ export default function Navbar() {
     { path: '/create-quiz', label: 'Tạo đề từ file', icon: '✨' },
     { path: '/history', label: 'Lịch sử', icon: '📊' },
     { path: '/leaderboard', label: 'Xếp hạng', icon: '🏆' },
+    ...(user?.authSource === 'server' && user?.role === 'admin' ? [{ path: '/admin/accounts', label: 'Quản trị', icon: '🛡️' }] : []),
   ];
 
   function handleLogout() {
@@ -51,10 +52,11 @@ export default function Navbar() {
           {/* Mobile user info */}
           {user && (
             <div className="navbar-user-mobile">
-              <div className="user-info-mobile">
+              <Link to="/account" className="user-info-mobile" onClick={() => setMenuOpen(false)}>
                 <span className="user-avatar">{user.avatar}</span>
                 <span>{user.displayName}</span>
-              </div>
+                <span className="account-nav-label">Tài khoản →</span>
+              </Link>
               <button className="btn btn-ghost" onClick={handleLogout} id="mobile-logout-btn">
                 🚪 Đăng xuất
               </button>
@@ -65,15 +67,17 @@ export default function Navbar() {
         {/* User Section - Desktop */}
         {user && (
           <div className="navbar-user" id="navbar-user-section">
-            <div className="user-info">
+            <Link to="/account" className={`user-info account-nav-link ${location.pathname === '/account' ? 'active' : ''}`} aria-label="Quản lý tài khoản cá nhân" title="Quản lý tài khoản cá nhân">
               <span className="user-avatar">{user.avatar}</span>
               <span className="user-name">{user.displayName}</span>
-            </div>
+              <span className="account-nav-label">Tài khoản</span>
+            </Link>
             <button
               className="btn btn-ghost btn-sm"
               onClick={handleLogout}
               id="logout-btn"
               title="Đăng xuất"
+              aria-label="Đăng xuất"
             >
               🚪
             </button>
