@@ -86,7 +86,7 @@ function QuizEditor({ quiz }) {
     updateDraft({ questions: draft.questions.filter((question) => !duplicates.has(question.id)) });
   }
 
-  function save(event) {
+  async function save(event) {
     event.preventDefault();
     if (invalidCount) {
       setFilter('invalid'); setSearch(''); setPage(1);
@@ -94,7 +94,7 @@ function QuizEditor({ quiz }) {
       return;
     }
     try {
-      const result = saveCustomQuiz(draft, { expectedUpdatedAt: revision });
+      const result = await saveCustomQuiz(draft, { expectedUpdatedAt: revision });
       setDraft(result.quiz); setRevision(result.quiz.updatedAt); setDirty(false); setError('');
       setMessage('Đã lưu thay đổi. Bộ đề đã sẵn sàng để làm bài.');
     } catch (err) { setError(err.message); }

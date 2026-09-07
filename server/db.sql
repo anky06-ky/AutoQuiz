@@ -37,10 +37,13 @@ CREATE TABLE IF NOT EXISTS quizzes (
   questionCount INT DEFAULT 0,
   timeLimit INT DEFAULT 30, -- Thời gian làm bài (phút)
   maxAttempts INT DEFAULT 0, -- Số lượt thi tối đa (0 = không giới hạn)
-  shareCode VARCHAR(50) UNIQUE,
+  shareCode VARCHAR(50),
   authorId VARCHAR(50) DEFAULT 'system',
   authorName VARCHAR(100) DEFAULT 'Hệ thống',
-  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  UNIQUE INDEX uq_quizzes_share_code (shareCode),
+  INDEX idx_quizzes_author (authorId, updatedAt)
 );
 
 -- 3. Bảng Câu hỏi trắc nghiệm (questions)
@@ -69,5 +72,6 @@ CREATE TABLE IF NOT EXISTS quiz_history (
   correctCount INT NOT NULL,
   score INT NOT NULL,
   timeSpent INT NOT NULL,
-  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_history_user (userId, timestamp)
 );

@@ -26,16 +26,11 @@ Lệnh cấp quyền chỉ áp dụng cho tài khoản đã có, đang hoạt đ
 
 Admin có thể tìm/lọc/phân trang danh sách, tạo tài khoản, cấp/gỡ quyền admin và khóa/mở khóa. Không thể tự khóa hay gỡ quyền của chính mình. Thay đổi quyền hoặc khóa tài khoản sẽ thu hồi các phiên liên quan; luôn phải giữ một admin hoạt động. Không có chức năng xóa vĩnh viễn dữ liệu người dùng.
 
-## Dùng với Netlify
+## Dùng với Render
 
-Netlify hiện chỉ xuất bản ứng dụng giao diện trong `dist`. Để quản lý tài khoản trực tuyến, cần triển khai thư mục `server` trên một dịch vụ chạy Node.js với MySQL truy cập được từ dịch vụ đó:
+Render chạy bản build React và Express trên cùng một Web Service, vì vậy không cần cấu hình `VITE_API_BASE_URL`. Tài khoản, bộ đề và lịch sử dùng chung MySQL và được tải lại khi đăng nhập trên thiết bị khác. Xem từng bước tại [RENDER_DEPLOY.md](RENDER_DEPLOY.md).
 
-- Lệnh chạy: `npm run server`.
-- Cấu hình `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` trên dịch vụ máy chủ, không đưa vào biến `VITE_*`.
-- Máy chủ mặc định chỉ lắng nghe `127.0.0.1`; đặt `HOST=0.0.0.0` khi nền tảng hosting yêu cầu và cung cấp địa chỉ HTTPS qua nền tảng.
-- Đặt biến build `VITE_API_BASE_URL=https://<dia-chi-may-chu>/api` trong Netlify rồi build/deploy lại.
-- Tạo và cấp quyền `admin06` trong cơ sở dữ liệu của máy chủ online bằng quy trình trên. Tài khoản admin local không tự xuất hiện trong cơ sở dữ liệu online.
-- Không dùng địa chỉ localhost làm máy chủ của bản Netlify: nó trỏ đến máy của từng người truy cập.
+Nếu vẫn giữ giao diện Netlify và đặt API ở Render, cấu hình `VITE_API_BASE_URL=https://<ten-dich-vu>.onrender.com/api` trên Netlify và `CORS_ORIGIN=https://<ten-site>.netlify.app` trên Render.
 
 ## Mật khẩu và kiểm tra
 

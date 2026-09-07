@@ -103,6 +103,20 @@ test('IDs are unique and imports preserve share codes across devices', () => {
   assert.equal(imported.shareCode, first.shareCode);
 });
 
+test('server refresh replaces old server data while preserving browser-only quizzes', () => {
+  const browserQuiz = quiz({ id: 'browser-only', authorId: 'local-user' });
+  const oldServerQuiz = quiz({ id: 'server-old', authorId: 'server-user', storageSource: 'server' });
+  const store = createQuizStore(memoryStorage([browserQuiz, oldServerQuiz]));
+  const freshServerQuiz = quiz({ id: 'server-new', authorId: 'server-user', title: 'Bản trên máy chủ' });
+  store.replaceServer([freshServerQuiz]);
+  assert.deepEqual(store.getSnapshot().map((item) => item.id), ['server-new', 'browser-only']);
+  assert.equal(store.getSnapshot()[0].storageSource, 'server');
+  const snapshot = store.getSnapshot();
+  store.remove('server-new');
+  store.replaceAll(snapshot);
+  assert.deepEqual(store.getSnapshot(), snapshot);
+});
+
 test('duplicate question detection keeps different answer keys and explanations', () => {
   const questions = [question(), question('q-2'), { ...question('q-3'), correctAnswer: 2 }, { ...question('q-4'), explanation: 'Khác' }];
   assert.deepEqual(duplicateQuestionIds(questions), ['q-2']);

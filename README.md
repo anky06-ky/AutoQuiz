@@ -1,16 +1,28 @@
-# React + Vite
+# AutoQuiz
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Ứng dụng tạo, tinh chỉnh và làm bài trắc nghiệm từ tài liệu. Bản đầy đủ gồm React/Vite, Express và MySQL; tài khoản, bộ đề và lịch sử được đồng bộ theo người dùng khi đăng nhập bằng tài khoản máy chủ.
 
-Currently, two official plugins are available:
+## Chạy trên máy
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Sao chép `.env.example` thành `.env` và điền thông tin MySQL.
+2. Cài thư viện: `npm ci`.
+3. Chạy API: `npm run server`.
+4. Ở cửa sổ lệnh khác, chạy giao diện: `npm run dev`.
 
-## React Compiler
+Các lệnh kiểm tra:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm test
+npm run lint
+npm run build
+```
 
-## Expanding the Oxlint configuration
+## Quản lý tài khoản
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- Người dùng mở **Tài khoản** để sửa tên, ảnh đại diện và đổi mật khẩu.
+- Admin mở **Quản lý tài khoản** để tìm, tạo, khóa và phân quyền tài khoản.
+- Cấp quyền admin từ máy chủ: `npm run admin -- admin06`.
+
+## Đưa lên Render
+
+Làm theo [hướng dẫn triển khai Render](server/RENDER_DEPLOY.md). Tệp `render.yaml` đã cấu hình build giao diện và chạy API chung trên một Web Service.

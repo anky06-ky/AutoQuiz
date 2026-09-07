@@ -10,13 +10,13 @@ export default function CreateQuiz() {
   const navigate = useNavigate();
 
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [description] = useState('');
   const [inputText, setInputText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [method, setMethod] = useState('file');
   const [engine, setEngine] = useState('smart');
   const [apiKey, setApiKey] = useState('');
-  const [questionCount, setQuestionCount] = useState(500);
+  const [questionCount] = useState(500);
 
   // Quiz Configurations
   const [timeLimit, setTimeLimit] = useState(30); // Phút
@@ -185,7 +185,7 @@ export default function CreateQuiz() {
   }
 
   // Lưu bộ đề
-  function handleSaveQuiz() {
+  async function handleSaveQuiz() {
     if (!title.trim()) {
       setError('Vui lòng nhập tên bộ đề thi!');
       return;
@@ -212,7 +212,7 @@ export default function CreateQuiz() {
     };
 
     try {
-      const result = saveCustomQuiz(newQuiz);
+      const result = await saveCustomQuiz(newQuiz);
       alert(result.duplicate ? `Bộ đề “${result.quiz.title}” đã tồn tại. Mở bộ đề để chỉnh sửa, không tạo thêm bản trùng.` : 'Đã lưu bộ đề. Bạn có thể tiếp tục tinh chỉnh câu hỏi.');
       navigate(`/edit-quiz/${result.quiz.id}`);
     } catch (err) { setError(err.message); }

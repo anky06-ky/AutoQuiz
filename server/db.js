@@ -8,28 +8,45 @@ const DB_PORT = parseInt(process.env.DB_PORT || '3306');
 const DB_USER = process.env.DB_USER || 'root';
 const DB_PASSWORD = process.env.DB_PASSWORD || '';
 const DB_NAME = process.env.DB_NAME || 'autoquiz_db';
+const DB_SSL = process.env.DB_SSL === 'true';
+
+if (!/^[a-zA-Z0-9_]+$/.test(DB_NAME)) throw new Error('DB_NAME chỉ được chứa chữ, số và dấu gạch dưới.');
+
+const connectionOptions = (database) => ({
+  host: DB_HOST,
+  port: DB_PORT,
+  user: DB_USER,
+  password: DB_PASSWORD,
+  ...(database ? { database } : {}),
+  ...(DB_SSL ? { ssl: { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false', ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {}) } } : {}),
+  connectTimeout: 10000,
+});
 
 let pool = null;
 let isDbConnected = false;
 
 export async function initDatabase() {
   try {
-    const rootConn = await mysql.createConnection({
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      password: DB_PASSWORD,
-    });
-
-    await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
-    await rootConn.end();
+    // Hosted database users often cannot CREATE DATABASE. Connect directly
+    // first and only create the local development database when it is missing.
+    let probe;
+    try {
+      probe = await mysql.createConnection(connectionOptions(DB_NAME));
+      await probe.query('SELECT 1');
+    } catch (err) {
+      if (err.code !== 'ER_BAD_DB_ERROR') throw err;
+      const rootConn = await mysql.createConnection(connectionOptions());
+      try {
+        await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+      } finally {
+        await rootConn.end();
+      }
+    } finally {
+      await probe?.end();
+    }
 
     pool = mysql.createPool({
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
+      ...connectionOptions(DB_NAME),
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
@@ -78,9 +95,15 @@ export async function initDatabase() {
         shareCode VARCHAR(50),
         authorId VARCHAR(50) DEFAULT 'system',
         authorName VARCHAR(100) DEFAULT 'Hệ thống',
-        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
       );
     `);
+
+    const [quizColumns] = await pool.query('SHOW COLUMNS FROM quizzes');
+    if (!quizColumns.some((column) => column.Field === 'updatedAt')) {
+      await pool.query('ALTER TABLE quizzes ADD COLUMN updatedAt DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)');
+    }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS questions (
@@ -113,10 +136,25 @@ export async function initDatabase() {
       );
     `);
 
+    const [quizIndexes] = await pool.query('SHOW INDEX FROM quizzes');
+    if (!quizIndexes.some((index) => index.Key_name === 'uq_quizzes_share_code')) {
+      const [duplicates] = await pool.query('SELECT shareCode FROM quizzes WHERE shareCode IS NOT NULL GROUP BY shareCode HAVING COUNT(*) > 1');
+      for (const duplicate of duplicates) {
+        const [items] = await pool.query('SELECT id FROM quizzes WHERE shareCode = ? ORDER BY createdAt, id', [duplicate.shareCode]);
+        for (const item of items.slice(1)) await pool.query("UPDATE quizzes SET shareCode = CONCAT('AQ-', LEFT(REPLACE(UUID(), '-', ''), 12)) WHERE id = ?", [item.id]);
+      }
+      await pool.query('CREATE UNIQUE INDEX uq_quizzes_share_code ON quizzes(shareCode)');
+    }
+    if (!quizIndexes.some((index) => index.Key_name === 'idx_quizzes_author')) await pool.query('CREATE INDEX idx_quizzes_author ON quizzes(authorId, updatedAt)');
+    const [historyIndexes] = await pool.query('SHOW INDEX FROM quiz_history');
+    if (!historyIndexes.some((index) => index.Key_name === 'idx_history_user')) await pool.query('CREATE INDEX idx_history_user ON quiz_history(userId, timestamp)');
+
     isDbConnected = true;
     console.log(`✅ Kết nối thành công MySQL Database '${DB_NAME}' tại ${DB_HOST}:${DB_PORT}`);
     return pool;
   } catch (err) {
+    await pool?.end().catch(() => {});
+    pool = null;
     console.warn(`⚠️ Chưa thể kết nối MySQL (${err.message}). Hệ thống vẫn hoạt động mượt mà với LocalStorage!`);
     isDbConnected = false;
     return null;

@@ -48,10 +48,10 @@ export default function Dashboard() {
     navigate(`/quiz/${categoryId}?${params}`);
   }
 
-  function handleDeleteQuiz(e, quizId) {
+  async function handleDeleteQuiz(e, quizId) {
     e.stopPropagation();
     if (window.confirm('Bạn có chắc chắn muốn xóa bộ đề thi này?')) {
-      try { deleteCustomQuiz(quizId); setNotice('Đã xóa bộ đề.'); setError(''); } catch (err) { setError(err.message); }
+      try { await deleteCustomQuiz(quizId); setNotice('Đã xóa bộ đề.'); setError(''); } catch (err) { setError(err.message); }
     }
   }
 
@@ -99,7 +99,7 @@ export default function Dashboard() {
           createdAt: new Date().toISOString(),
         };
 
-        const result = saveCustomQuiz(newQuiz);
+        const result = await saveCustomQuiz(newQuiz);
         setNotice(result.duplicate ? `Bộ đề “${result.quiz.title}” đã có trong thư viện. Không tạo thêm bản trùng.` : `Đã nhập “${result.quiz.title}” · ${result.quiz.questionCount} câu hỏi.`);
         setError('');
         setShowImportModal(false);

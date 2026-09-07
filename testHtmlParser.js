@@ -19,14 +19,14 @@ async function parseDocxHtml(buffer) {
 
   // Tách theo các thẻ H1, H2, H3, H4, hoặc P chứa "Câu X."
   // Hoặc tách theo chuỗi HTML
-  const blocks = html.split(/(?=(?:<h[1-6]>|<p>)(?:<strong>)?\s*(?:câu|question|bài)\s*\d+[\.:\/\)-])/gi);
+  const blocks = html.split(/(?=(?:<h[1-6]>|<p>)(?:<strong>)?\s*(?:câu|question|bài)\s*\d+[.:/)-])/gi);
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i].trim();
     if (!block) continue;
 
     // Lấy tên câu hỏi từ thẻ đầu tiên
-    const qMatch = block.match(/^(?:<h[1-6]>|<p>)\s*(?:<strong>)?\s*(?:câu|question|bài)?\s*\d*[\.:\/\)-]?\s*([\s\S]*?)(?:<\/strong>)?(?:<\/h[1-6]>|<\/p>)/i);
+    const qMatch = block.match(/^(?:<h[1-6]>|<p>)\s*(?:<strong>)?\s*(?:câu|question|bài)?\s*\d*[.:/)-]?\s*([\s\S]*?)(?:<\/strong>)?(?:<\/h[1-6]>|<\/p>)/i);
     if (!qMatch) continue;
 
     // Clean html tags in question title
@@ -57,7 +57,7 @@ async function parseDocxHtml(buffer) {
       // Bỏ qua thẻ <p> đầu tiên vì là tiêu đề câu hỏi
       const optParagraphs = pMatches.slice(1);
 
-      optParagraphs.forEach((pMatch, idx) => {
+      optParagraphs.forEach((pMatch) => {
         const pContent = pMatch[1];
         const isHighlighted = /<mark/i.test(pContent);
         if (isHighlighted) {

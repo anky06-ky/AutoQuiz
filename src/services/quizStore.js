@@ -49,6 +49,14 @@ export function createQuizStore(storage) {
     getError: () => readError,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     refresh: emit,
+    replaceServer(incoming) {
+      const quizzes = readForWrite();
+      const serverQuizzes = incoming.map((quiz) => ({ ...quiz, storageSource: 'server', questionCount: quiz.questions.length }));
+      const serverIds = new Set(serverQuizzes.map((quiz) => quiz.id));
+      const localOnly = quizzes.filter((quiz) => quiz.storageSource !== 'server' && !serverIds.has(quiz.id));
+      write([...serverQuizzes, ...localOnly]);
+    },
+    replaceAll(quizzes) { write(quizzes); },
     save(input, author, { expectedUpdatedAt } = {}) {
       const quizzes = readForWrite();
       const normalized = normalizeQuiz(input);

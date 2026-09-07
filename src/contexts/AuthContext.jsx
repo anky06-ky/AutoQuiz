@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components */
 import { createContext, useContext, useState, useEffect, useSyncExternalStore } from 'react';
 import { quizStore } from '../services/quizStore';
 import { localAccounts, USERS_KEY } from '../services/localAccounts';
@@ -5,6 +6,9 @@ import { accountRequest, clearAccessToken, hasAccessToken, hasConfiguredServer }
 import {
   apiRegister,
   apiLogin,
+  apiGetQuizzes,
+  apiGetMyHistory,
+  apiGetLeaderboard,
   apiSaveQuiz,
   apiDeleteQuiz,
   apiSaveResult,
@@ -21,7 +25,20 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [useMysql, setUseMysql] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [serverHistory, setServerHistory] = useState([]);
+  const [serverLeaderboard, setServerLeaderboard] = useState([]);
   const customQuizzes = useSyncExternalStore(quizStore.subscribe, quizStore.getSnapshot);
+
+  async function hydrateServerData(account) {
+    const [quizzes, history, leaderboard] = await Promise.all([
+      apiGetQuizzes(),
+      apiGetMyHistory(account.id),
+      apiGetLeaderboard(),
+    ]);
+    quizStore.replaceServer(quizzes);
+    setServerHistory(history.map((entry) => ({ ...entry, categoryId: entry.categoryId || entry.quizId })));
+    setServerLeaderboard(leaderboard.map((entry) => ({ ...entry, categoryId: entry.categoryId || entry.quizId })));
+  }
 
   function persistUser(account) {
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(account));
@@ -40,7 +57,12 @@ export function AuthProvider({ children }) {
         const saved = JSON.parse(localStorage.getItem(CURRENT_USER_KEY) || 'null');
         if (hasAccessToken()) {
           const account = await accountRequest('/auth/me');
-          if (!cancelled) persistUser({ ...account, authSource: 'server' });
+          const serverAccount = { ...account, authSource: 'server' };
+          if (!cancelled) {
+            persistUser(serverAccount);
+            try { await hydrateServerData(serverAccount); }
+            catch (err) { if (!cancelled) setAuthError(`Đã đăng nhập nhưng chưa đồng bộ đủ dữ liệu: ${err.message}`); }
+          }
         } else if (saved && saved.authSource !== 'server') {
           const account = localAccounts.get(saved.id);
           if (account.passwordChangedAt !== (saved.passwordChangedAt || null)) throw new Error('Mật khẩu đã thay đổi. Hãy đăng nhập lại.');
@@ -83,19 +105,25 @@ export function AuthProvider({ children }) {
   async function register(username, password, displayName, source = useMysql ? 'server' : 'local') {
     const account = source === 'server' ? await apiRegister(username, password, displayName) : await localAccounts.register(username, password, displayName);
     if (account.authSource === 'local') clearAccessToken();
-    return persistUser(account);
+    const persisted = persistUser(account);
+    if (account.authSource === 'server') await hydrateServerData(account);
+    return persisted;
   }
 
   async function login(username, password, source = useMysql ? 'server' : 'local') {
     const account = source === 'server' ? await apiLogin(username, password) : await localAccounts.login(username, password);
     if (account.authSource === 'local') clearAccessToken();
-    return persistUser(account);
+    const persisted = persistUser(account);
+    if (account.authSource === 'server') await hydrateServerData(account);
+    return persisted;
   }
 
   function logout() {
     if (user?.authSource === 'server') accountRequest('/auth/logout', { method: 'POST' }).catch(() => {});
     clearAccessToken();
     localStorage.removeItem(CURRENT_USER_KEY);
+    setServerHistory([]);
+    setServerLeaderboard([]);
     setUser(null);
   }
 
@@ -117,7 +145,7 @@ export function AuthProvider({ children }) {
   }
 
   // Lưu kết quả thi
-  function saveQuizResult(result) {
+  async function saveQuizResult(result) {
     const history = getHistory();
     const entry = {
       ...result,
@@ -125,16 +153,23 @@ export function AuthProvider({ children }) {
       userName: user ? user.displayName : 'Guest',
       timestamp: new Date().toISOString(),
     };
+    if (user?.authSource === 'server') {
+      const saved = await apiSaveResult(entry);
+      const serverEntry = { ...entry, ...saved.result, categoryId: saved.result?.categoryId || entry.categoryId };
+      setServerHistory((current) => [...current, serverEntry]);
+      apiGetLeaderboard().then((items) => setServerLeaderboard(items.map((item) => ({ ...item, categoryId: item.categoryId || item.quizId })))).catch(() => {});
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify([...history, serverEntry])); } catch { /* The database remains the source of truth. */ }
+      return serverEntry;
+    }
     history.push(entry);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-
-    if (user?.authSource === 'server') {
-      apiSaveResult(entry);
-    }
     return entry;
   }
 
   function getHistory(userId = null) {
+    if (user?.authSource === 'server') {
+      return userId && userId !== user.id ? [] : serverHistory;
+    }
     try {
       const history = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
       if (userId) {
@@ -152,7 +187,7 @@ export function AuthProvider({ children }) {
   }
 
   function getLeaderboard(categoryId = null) {
-    const history = getHistory();
+    const history = user?.authSource === 'server' ? serverLeaderboard : getHistory();
     const filtered = categoryId
       ? history.filter((h) => h.categoryId === categoryId)
       : history;
@@ -193,22 +228,27 @@ export function AuthProvider({ children }) {
 
   // Quản lý bộ đề thi tự tạo
   function getCustomQuizzes() {
-    return customQuizzes;
+    return visibleQuizzes;
   }
 
-  function saveCustomQuiz(quiz, options) {
-    const result = quizStore.save(quiz, user, options);
-    if (user?.authSource === 'server' && !result.duplicate) apiSaveQuiz(result.quiz);
+  async function saveCustomQuiz(quiz, options) {
+    const previous = quizStore.getSnapshot();
+    const result = quizStore.save(user?.authSource === 'server' ? { ...quiz, storageSource: 'server' } : quiz, user, options);
+    if (user?.authSource === 'server' && !result.duplicate) {
+      try { await apiSaveQuiz(result.quiz); }
+      catch (err) { quizStore.replaceAll(previous); throw err; }
+    }
     return result;
   }
 
-  function deleteCustomQuiz(quizId) {
+  async function deleteCustomQuiz(quizId) {
+    if (user?.authSource === 'server') await apiDeleteQuiz(quizId);
     quizStore.remove(quizId);
-
-    if (user?.authSource === 'server') {
-      apiDeleteQuiz(quizId);
-    }
   }
+
+  const visibleQuizzes = user
+    ? customQuizzes.filter((quiz) => quiz.authorId === user.id || (user.authSource === 'server' && user.role === 'admin' && quiz.storageSource === 'server'))
+    : [];
 
   const value = {
     user,
@@ -227,7 +267,7 @@ export function AuthProvider({ children }) {
     getLeaderboard,
     getStats,
     getCustomQuizzes,
-    customQuizzes,
+    customQuizzes: visibleQuizzes,
     quizStorageError: quizStore.getError(),
     saveCustomQuiz,
     deleteCustomQuiz,

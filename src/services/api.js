@@ -4,9 +4,10 @@
 // Nếu Server MySQL offline -> Tự động Fallback sang LocalStorage
 // =============================================
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '');
-export const hasConfiguredServer = Boolean(import.meta.env.VITE_API_BASE_URL);
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+export const hasConfiguredServer = Boolean(import.meta.env.VITE_API_BASE_URL || !import.meta.env.DEV);
 const TOKEN_KEY = 'autoquiz_access_token';
+const REQUEST_TIMEOUT = import.meta.env.DEV ? 15000 : 65000;
 
 export function clearAccessToken() { sessionStorage.removeItem(TOKEN_KEY); }
 export function hasAccessToken() { return Boolean(sessionStorage.getItem(TOKEN_KEY)); }
@@ -19,7 +20,7 @@ export async function accountRequest(path, options = {}) {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
     });
   } catch { throw new Error('Không kết nối được máy chủ. Hãy thử lại, dữ liệu chưa được thay đổi trên trình duyệt.'); }
   const data = await response.json().catch(() => ({}));
@@ -68,54 +69,39 @@ export async function apiLogin(username, password) {
 
 // 3. Lấy bộ đề thi từ MySQL
 export async function apiGetQuizzes() {
-  try {
-    return await accountRequest('/quizzes');
-  } catch {
-    // Fallback
-  }
-  return null;
+  return accountRequest('/quizzes');
 }
 
 // 4. Lấy chi tiết câu hỏi từ MySQL
 export async function apiGetQuizById(quizId) {
-  try {
-    return await accountRequest(`/quizzes/${encodeURIComponent(quizId)}`);
-  } catch {
-    // Fallback
-  }
-  return null;
+  return accountRequest(`/quizzes/${encodeURIComponent(quizId)}`);
 }
 
 // 5. Lưu bộ đề thi mới vào MySQL
 export async function apiSaveQuiz(quiz) {
-  try {
-    return await accountRequest('/quizzes', {
-      method: 'POST',
-      body: JSON.stringify(quiz),
-    });
-  } catch {
-    // Fallback
-  }
-  return null;
+  return accountRequest('/quizzes', {
+    method: 'POST',
+    body: JSON.stringify(quiz),
+  });
 }
 
 // 6. Xóa bộ đề thi khỏi MySQL
 export async function apiDeleteQuiz(quizId) {
-  try {
-    await accountRequest(`/quizzes/${encodeURIComponent(quizId)}`, { method: 'DELETE' });
-  } catch {
-    // Fallback
-  }
+  return accountRequest(`/quizzes/${encodeURIComponent(quizId)}`, { method: 'DELETE' });
 }
 
 // 7. Lưu kết quả thi vào MySQL
 export async function apiSaveResult(result) {
-  try {
-    await accountRequest('/history', {
-      method: 'POST',
-      body: JSON.stringify(result),
-    });
-  } catch {
-    // Fallback
-  }
+  return accountRequest('/history', {
+    method: 'POST',
+    body: JSON.stringify(result),
+  });
+}
+
+export async function apiGetMyHistory(userId) {
+  return accountRequest(`/history/user/${encodeURIComponent(userId)}`);
+}
+
+export async function apiGetLeaderboard() {
+  return accountRequest('/leaderboard');
 }

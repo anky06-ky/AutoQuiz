@@ -70,7 +70,7 @@ function QuizSession({ topic, searchParams }) {
   }
 
   // Nộp bài
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (submitted.current || isAttemptLimitExceeded || !quizQuestions.length) return;
     submitted.current = true;
 
@@ -104,12 +104,12 @@ function QuizSession({ topic, searchParams }) {
     };
 
     try {
-      const saved = saveQuizResult(result);
+      const saved = await saveQuizResult(result);
       setIsFinished(true);
       navigate('/result', { state: { result: saved, questions: quizQuestions, answers } });
-    } catch {
+    } catch (err) {
       submitted.current = false;
-      setSaveError('Không lưu được kết quả vì bộ nhớ đầy hoặc bị chặn. Hãy giải phóng bộ nhớ rồi nộp lại.');
+      setSaveError(err.message || 'Không lưu được kết quả. Hãy kiểm tra kết nối rồi nộp lại.');
     }
   }, [isAttemptLimitExceeded, quizQuestions, answers, startTime, topic, category, mode, searchParams, saveQuizResult, navigate]);
 

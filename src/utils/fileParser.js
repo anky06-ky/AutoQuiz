@@ -69,14 +69,14 @@ export function parseDocxHtml(html) {
   const questions = [];
 
   // Tách theo các thẻ tiêu đề H1-H6 hoặc P chứa "Câu X."
-  const blocks = html.split(/(?=(?:<h[1-6]>|<p>)(?:<strong>)?\s*(?:câu|question|bài)\s*\d+[\.:\/\)-])/gi);
+  const blocks = html.split(/(?=(?:<h[1-6]>|<p>)(?:<strong>)?\s*(?:câu|question|bài)\s*\d+[.:/)-])/gi);
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i].trim();
     if (!block) continue;
 
     // Lấy tiêu đề câu hỏi
-    const qMatch = block.match(/^(?:<h[1-6]>|<p>)\s*(?:<strong>)?\s*(?:câu|question|bài)?\s*\d*[\.:\/\)-]?\s*([\s\S]*?)(?:<\/strong>)?(?:<\/h[1-6]>|<\/p>)/i);
+    const qMatch = block.match(/^(?:<h[1-6]>|<p>)\s*(?:<strong>)?\s*(?:câu|question|bài)?\s*\d*[.:/)-]?\s*([\s\S]*?)(?:<\/strong>)?(?:<\/h[1-6]>|<\/p>)/i);
     if (!qMatch) continue;
 
     const questionTitle = qMatch[1].replace(/<[^>]+>/g, '').trim();
@@ -165,7 +165,7 @@ export function extractExistingQuestions(rawText) {
     .replace(/[ \t]+/g, ' ');
 
   const answerKeyMap = extractAnswerKeyMap(text);
-  const headerRegex = /(?:^|\n)\s*(?:(?:câu|question|bài|câu hỏi)\s*\d+|\d{1,3}\s*[\.:\/\)-])\s*/gi;
+  const headerRegex = /(?:^|\n)\s*(?:(?:câu|question|bài|câu hỏi)\s*\d+|\d{1,3}\s*[.:/)-])\s*/gi;
 
   const matches = [];
   let m;
@@ -190,13 +190,13 @@ export function extractExistingQuestions(rawText) {
       const lines = blockText.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length === 0) continue;
 
-      let questionTitle = lines[0].replace(/^[\.\s:\/\)-]+/, '').trim();
+      let questionTitle = lines[0].replace(/^[.\s:/)-]+/, '').trim();
       let options = [];
 
-      const hasABCD = /(?:^|\s+)[A-D][\.:\)\s]/i.test(blockText);
+      const hasABCD = /(?:^|\s+)[A-D][.:)\s]/i.test(blockText);
 
       if (hasABCD) {
-        const optRegex = /(?:^|\s+)([A-D])[\.:\)\s]\s*/gi;
+        const optRegex = /(?:^|\s+)([A-D])[.:)\s]\s*/gi;
         const optMatches = [];
         let om;
         while ((om = optRegex.exec(blockText)) !== null) {
@@ -205,7 +205,7 @@ export function extractExistingQuestions(rawText) {
 
         if (optMatches.length >= 2) {
           questionTitle = blockText.substring(0, optMatches[0].index)
-            .replace(/^[\.\s:\/\)-]+/, '')
+            .replace(/^[.\s:/)-]+/, '')
             .trim();
 
           for (let j = 0; j < optMatches.length; j++) {
@@ -232,7 +232,7 @@ export function extractExistingQuestions(rawText) {
       });
 
       const cleanOpts = options.map((o) => {
-        let cleaned = o.replace(/[\*✓]/g, '').replace(/\[x\]/gi, '').trim();
+        let cleaned = o.replace(/[*✓]/g, '').replace(/\[x\]/gi, '').trim();
         cleaned = cleaned.split(/(?:đáp án|key|đáp án đúng|hướng dẫn|giải thích)/i)[0].trim();
         return cleaned;
       });
@@ -273,7 +273,7 @@ function extractAnswerKeyMap(text) {
   const sectionMatch = text.match(/(?:bảng đáp án|đáp án|danh sách đáp án)[\s\S]*$/i);
   const searchArea = sectionMatch ? sectionMatch[0] : text;
 
-  const keyMatches = searchArea.matchAll(/(?:câu\s*)?(\d{1,3})[\s:\.\-]*([A-D])\b/gi);
+  const keyMatches = searchArea.matchAll(/(?:câu\s*)?(\d{1,3})[\s:.-]*([A-D])\b/gi);
   for (const m of keyMatches) {
     const qNum = parseInt(m[1]);
     const ansChar = m[2].toUpperCase();
@@ -330,7 +330,7 @@ function createQuizFromSentence(sentence, index, allSentences) {
 
   if (keyword.length > 2) {
     const maskedSentence = sentence.replace(keyword, '_______');
-    const wrongKeywords = getDistractorKeywords(keyword, allSentences);
+    const wrongKeywords = getDistractorKeywords(keyword);
     const options = [keyword, ...wrongKeywords];
     const shuffled = shuffleOptions(options, 0);
 
@@ -375,7 +375,7 @@ function getRandomDistractors(correctText, allSentences, currentIndex) {
   return distractors;
 }
 
-function getDistractorKeywords(correctKey, allSentences) {
+function getDistractorKeywords(correctKey) {
   const distractors = ['tính chất', 'yếu tố', 'phương pháp', 'khái niệm', 'kết quả', 'đặc điểm'];
   const filtered = distractors.filter((d) => d.toLowerCase() !== correctKey.toLowerCase());
   return filtered.slice(0, 3);
