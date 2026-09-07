@@ -136,7 +136,7 @@ export default function Result() {
           <div className="result-actions">
             <button
               className="btn btn-primary btn-lg"
-              onClick={() => navigate(`/quiz/${result.categoryId}?mode=${result.mode}&count=${result.totalQuestions}`)}
+              onClick={() => navigate(`/quiz/${result.categoryId}?${result.settingsQuery || `mode=${result.mode}&count=${result.totalQuestions}`}`)}
               id="retry-btn"
             >
               🔄 Làm lại

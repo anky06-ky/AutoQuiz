@@ -3,6 +3,9 @@
 // 5 chủ đề mặc định + hỗ trợ bộ đề tự tạo từ file/văn bản người dùng
 // =============================================
 
+import { quizStore } from '../services/quizStore.js';
+import { selectQuestions } from '../utils/quizData.js';
+
 export const categories = [
   {
     id: 'cntt',
@@ -480,42 +483,14 @@ export const questions = {
 
 // Hàm lấy câu hỏi từ danh sách mặc định HOẶC bộ đề tùy chỉnh trong localStorage
 export function getRandomQuestions(categoryId, count) {
-  let categoryQuestions = questions[categoryId];
-
-  // Nếu là bộ đề tùy chỉnh bắt đầu bằng "custom-"
-  if (!categoryQuestions && categoryId?.startsWith('custom-')) {
-    try {
-      const customQuizzes = JSON.parse(localStorage.getItem('autoquiz_custom_quizzes')) || [];
-      const found = customQuizzes.find(q => q.id === categoryId);
-      if (found && found.questions) {
-        categoryQuestions = found.questions;
-      }
-    } catch {
-      categoryQuestions = [];
-    }
-  }
-
-  if (!categoryQuestions || categoryQuestions.length === 0) return [];
-
-  const shuffled = [...categoryQuestions].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, Math.min(count, shuffled.length));
+  return selectQuestions(getAllQuestions(categoryId), count);
 }
 
 // Lấy toàn bộ câu hỏi
 export function getAllQuestions(categoryId) {
   if (questions[categoryId]) return questions[categoryId];
 
-  if (categoryId?.startsWith('custom-')) {
-    try {
-      const customQuizzes = JSON.parse(localStorage.getItem('autoquiz_custom_quizzes')) || [];
-      const found = customQuizzes.find(q => q.id === categoryId);
-      return found?.questions || [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
+  return quizStore.getSnapshot().find((quiz) => quiz.id === categoryId || quiz.shareCode === categoryId)?.questions || [];
 }
 
 export function getQuizTime(questionCount) {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { parseFileContent, convertTextToQuiz } from '../utils/fileParser';
@@ -26,6 +26,8 @@ export default function CreateQuiz() {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // Xử lý chọn file
   async function handleFileSelect(e) {
@@ -35,6 +37,53 @@ export default function CreateQuiz() {
     setSelectedFile(file);
     if (!title) {
       setTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+  }
+
+  // Drag & Drop handlers
+  function handleDragEnter(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      const validExts = ['.docx', '.txt', '.md', '.json'];
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!validExts.includes(ext)) {
+        setError(`Định dạng file "${ext}" không được hỗ trợ! Hãy dùng .docx, .txt, .md hoặc .json`);
+        return;
+      }
+      setSelectedFile(file);
+      if (!title) {
+        setTitle(file.name.replace(/\.[^/.]+$/, ''));
+      }
+      setError('');
     }
   }
 
@@ -162,9 +211,11 @@ export default function CreateQuiz() {
       createdAt: new Date().toISOString(),
     };
 
-    saveCustomQuiz(newQuiz);
-    alert(`🎉 Tạo thành công bộ đề thi!\nMã chia sẻ: ${shareCode}`);
-    navigate('/');
+    try {
+      const result = saveCustomQuiz(newQuiz);
+      alert(result.duplicate ? `Bộ đề “${result.quiz.title}” đã tồn tại. Mở bộ đề để chỉnh sửa, không tạo thêm bản trùng.` : 'Đã lưu bộ đề. Bạn có thể tiếp tục tinh chỉnh câu hỏi.');
+      navigate(`/edit-quiz/${result.quiz.id}`);
+    } catch (err) { setError(err.message); }
   }
 
   return (
@@ -218,7 +269,13 @@ export default function CreateQuiz() {
             </div>
 
             {method === 'file' ? (
-              <div className="file-upload-box">
+              <div
+                className={`file-upload-box ${isDragging ? 'is-dragging' : ''}`}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+              >
                 <input
                   type="file"
                   id="quiz-file-input"
@@ -226,10 +283,14 @@ export default function CreateQuiz() {
                   onChange={handleFileSelect}
                   style={{ display: 'none' }}
                 />
-                <label htmlFor="quiz-file-input" className="file-dropzone">
-                  <span className="dropzone-icon">📄</span>
+                <label htmlFor="quiz-file-input" className={`file-dropzone ${isDragging ? 'dragging' : ''}`}>
+                  <span className="dropzone-icon">{isDragging ? '📥' : (selectedFile ? '📄' : '📄')}</span>
                   <span className="dropzone-text">
-                    {selectedFile ? selectedFile.name : 'Nhấp để chọn file hoặc kéo thả file vào đây'}
+                    {isDragging
+                      ? 'Thả file vào đây!'
+                      : selectedFile
+                        ? selectedFile.name
+                        : 'Nhấp để chọn file hoặc kéo thả file vào đây'}
                   </span>
                   <span className="dropzone-sub">Hỗ trợ .docx, .txt, .md, .json (lên tới 500 câu)</span>
                 </label>

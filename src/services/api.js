@@ -4,9 +4,10 @@
 // Nếu Server MySQL offline -> Tự động Fallback sang LocalStorage
 // =============================================
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '');
 
 export async function checkServerHealth() {
+  if (!API_BASE_URL) return false;
   try {
     const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(1500) });
     if (res.ok) {

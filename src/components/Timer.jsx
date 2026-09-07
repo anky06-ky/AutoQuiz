@@ -4,6 +4,10 @@ import './Timer.css';
 export default function Timer({ totalSeconds, onTimeUp, isPaused = false }) {
   const [timeLeft, setTimeLeft] = useState(totalSeconds);
   const intervalRef = useRef(null);
+  const onTimeUpRef = useRef(onTimeUp);
+  const expiredRef = useRef(false);
+
+  useEffect(() => { onTimeUpRef.current = onTimeUp; }, [onTimeUp]);
 
   useEffect(() => {
     if (isPaused) {
@@ -15,7 +19,6 @@ export default function Timer({ totalSeconds, onTimeUp, isPaused = false }) {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(intervalRef.current);
-          onTimeUp?.();
           return 0;
         }
         return prev - 1;
@@ -23,7 +26,14 @@ export default function Timer({ totalSeconds, onTimeUp, isPaused = false }) {
     }, 1000);
 
     return () => clearInterval(intervalRef.current);
-  }, [isPaused, onTimeUp]);
+  }, [isPaused]);
+
+  useEffect(() => {
+    if (timeLeft === 0 && !expiredRef.current) {
+      expiredRef.current = true;
+      onTimeUpRef.current?.();
+    }
+  }, [timeLeft]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;

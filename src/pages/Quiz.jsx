@@ -1,8 +1,8 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { categories, getRandomQuestions } from '../data/questions';
-import { prepareQuizWithShuffledAnswers } from '../utils/fileParser';
+import { categories, questions } from '../data/questions';
+import { prepareQuizWithShuffledAnswers, selectQuestions, questionErrors } from '../utils/quizData';
 import QuestionCard from '../components/QuestionCard';
 import Timer from '../components/Timer';
 import './Quiz.css';
@@ -10,17 +10,19 @@ import './Quiz.css';
 export default function Quiz() {
   const { topic } = useParams();
   const [searchParams] = useSearchParams();
+  return <QuizSession key={`${topic}?${searchParams}`} topic={topic} searchParams={searchParams} />;
+}
+
+function QuizSession({ topic, searchParams }) {
   const navigate = useNavigate();
-  const { saveQuizResult, getCustomQuizzes, getMyHistory } = useAuth();
+  const { saveQuizResult, customQuizzes, getMyHistory } = useAuth();
 
-  const mode = searchParams.get('mode') || 'exam';
-  const count = parseInt(searchParams.get('count')) || 10;
-
-  // Lấy thông tin category mặc định hoặc custom quiz
-  const customQuizzes = useMemo(() => getCustomQuizzes(), [getCustomQuizzes]);
-  const customQuiz = useMemo(() => customQuizzes.find(q => q.id === topic || q.shareCode === topic), [customQuizzes, topic]);
-
-  const category = customQuiz
+  const mode = searchParams.get('mode') === 'practice' ? 'practice' : 'exam';
+  // Capture a single immutable attempt. Editing a quiz in another tab must not
+  // reshuffle questions or change the answer key in an ongoing attempt.
+  const [session] = useState(() => {
+    const customQuiz = customQuizzes.find((quiz) => quiz.id === topic || quiz.shareCode === topic);
+    const category = customQuiz
     ? {
         id: customQuiz.id,
         name: customQuiz.title,
@@ -29,22 +31,20 @@ export default function Quiz() {
         timeLimit: customQuiz.timeLimit || 30,
         maxAttempts: customQuiz.maxAttempts || 0,
       }
-    : categories.find((c) => c.id === topic);
-
-  // Kiểm tra giới hạn số lần làm bài
-  const myHistory = useMemo(() => getMyHistory(), [getMyHistory]);
-  const attemptsCount = useMemo(() => {
-    return myHistory.filter((h) => h.categoryId === topic || h.quizId === topic).length;
-  }, [myHistory, topic]);
-
+      : categories.find((item) => item.id === topic);
+    const sourceQuestions = customQuiz?.questions || questions[topic] || [];
+    const hasInvalidQuestions = sourceQuestions.some((question) => questionErrors(question).length > 0);
+    const rawQuestions = hasInvalidQuestions ? [] : selectQuestions(sourceQuestions, searchParams.get('count'), searchParams.get('shuffleQuestions') !== '0');
+    const quizQuestions = searchParams.get('shuffleAnswers') === '0' ? rawQuestions : prepareQuizWithShuffledAnswers(rawQuestions);
+    const attemptsCount = getMyHistory().filter((entry) => entry.categoryId === category?.id || entry.quizId === category?.id).length;
+    const requestedTime = Number(searchParams.get('time'));
+    const minutes = Number.isInteger(requestedTime) && requestedTime >= 1 && requestedTime <= 600 ? requestedTime : category?.timeLimit || quizQuestions.length;
+    return { category, quizQuestions, attemptsCount, totalTime: minutes * 60, hasInvalidQuestions };
+  });
+  const { category, quizQuestions, attemptsCount, totalTime, hasInvalidQuestions } = session;
   const isAttemptLimitExceeded = category?.maxAttempts > 0 && attemptsCount >= category.maxAttempts;
-
-  // Lấy câu hỏi & XÁO TRỘN ĐÁP ÁN (Shuffle option positions dynamically for each test)
-  const quizQuestions = useMemo(() => {
-    const targetTopic = customQuiz ? customQuiz.id : topic;
-    const rawQuestions = getRandomQuestions(targetTopic, count);
-    return prepareQuizWithShuffledAnswers(rawQuestions);
-  }, [topic, customQuiz, count]);
+  const submitted = useRef(false);
+  const [saveError, setSaveError] = useState('');
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -52,17 +52,9 @@ export default function Quiz() {
   const [isFinished, setIsFinished] = useState(false);
   const [startTime] = useState(Date.now());
 
-  // Thời gian thi (giây) theo cấu hình hoặc mặc định
-  const totalTime = useMemo(() => {
-    if (category?.timeLimit) {
-      return category.timeLimit * 60; // Đơn vị giây
-    }
-    return quizQuestions.length * 60;
-  }, [category, quizQuestions.length]);
-
   // Chọn đáp án
   function handleSelectAnswer(questionIndex, answerIndex) {
-    if (isFinished || isAttemptLimitExceeded) return;
+    if (isFinished || isAttemptLimitExceeded || (mode === 'practice' && showResults[questionIndex])) return;
 
     setAnswers((prev) => ({
       ...prev,
@@ -79,9 +71,8 @@ export default function Quiz() {
 
   // Nộp bài
   const handleSubmit = useCallback(() => {
-    if (isFinished || isAttemptLimitExceeded) return;
-
-    setIsFinished(true);
+    if (submitted.current || isAttemptLimitExceeded || !quizQuestions.length) return;
+    submitted.current = true;
 
     const allResults = {};
     quizQuestions.forEach((_, idx) => {
@@ -109,14 +100,18 @@ export default function Quiz() {
       timeSpent,
       answers: { ...answers },
       questions: quizQuestions.map((q) => q.id),
+      settingsQuery: searchParams.toString(),
     };
 
-    const saved = saveQuizResult(result);
-
-    setTimeout(() => {
+    try {
+      const saved = saveQuizResult(result);
+      setIsFinished(true);
       navigate('/result', { state: { result: saved, questions: quizQuestions, answers } });
-    }, 500);
-  }, [isFinished, isAttemptLimitExceeded, quizQuestions, answers, startTime, topic, category, mode, saveQuizResult, navigate]);
+    } catch {
+      submitted.current = false;
+      setSaveError('Không lưu được kết quả vì bộ nhớ đầy hoặc bị chặn. Hãy giải phóng bộ nhớ rồi nộp lại.');
+    }
+  }, [isAttemptLimitExceeded, quizQuestions, answers, startTime, topic, category, mode, searchParams, saveQuizResult, navigate]);
 
   const handleTimeUp = useCallback(() => {
     handleSubmit();
@@ -146,9 +141,9 @@ export default function Quiz() {
     return (
       <div className="page-center">
         <div className="glass-card text-center" style={{ maxWidth: '400px' }}>
-          <h2>❌ Không tìm thấy bộ đề thi</h2>
+          <h2>{hasInvalidQuestions ? 'Bộ đề có câu hỏi cần kiểm tra' : '❌ Không tìm thấy bộ đề thi'}</h2>
           <p className="text-secondary" style={{ margin: '1rem 0' }}>
-            Bộ đề thi không tồn tại hoặc chưa có câu hỏi.
+            {hasInvalidQuestions ? 'Hãy mở Chỉnh sửa để điền đủ lựa chọn và chọn đáp án đúng trước khi làm bài.' : 'Bộ đề thi không tồn tại hoặc chưa có câu hỏi.'}
           </p>
           <button className="btn btn-primary" onClick={() => navigate('/')}>
             ← Về trang chủ
@@ -184,6 +179,7 @@ export default function Quiz() {
   return (
     <div className="page" id="quiz-page">
       <div className="container">
+        {saveError && <p className="dashboard-feedback is-error" role="alert">{saveError}</p>}
         {/* Quiz Header */}
         <div className="quiz-header glass animate-fade-in-down">
           <div className="quiz-header-left">

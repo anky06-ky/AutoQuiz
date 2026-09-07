@@ -1,82 +1,112 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { categories } from '../data/questions';
+import { quizSignature, resolveQuestionCount } from '../utils/quizData';
+import { readSettings, settingsError } from '../utils/quizSettings';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { user, getStats, getCustomQuizzes, deleteCustomQuiz, saveCustomQuiz } = useAuth();
+  const { user, getStats, customQuizzes, quizStorageError, deleteCustomQuiz, saveCustomQuiz } = useAuth();
   const navigate = useNavigate();
-  const [selectedMode, setSelectedMode] = useState('exam');
-  const [selectedCount, setSelectedCount] = useState(10);
+  const [settings, setSettings] = useState(() => readSettings(user?.id));
+  const selectedMode = settings.mode;
+  const selectedCount = settings.count;
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('updated');
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
   const [shareModalQuiz, setShareModalQuiz] = useState(null);
-  const [importCode, setImportCode] = useState('');
   const [showImportModal, setShowImportModal] = useState(false);
   const stats = getStats();
-  const customQuizzes = getCustomQuizzes();
+  const configError = settingsError(settings);
+  useEffect(() => {
+    if (!settingsError(settings)) {
+      try { localStorage.setItem(`autoquiz_settings_${user?.id}`, JSON.stringify(settings)); } catch { /* Preferences may remain session-only when storage is full. */ }
+    }
+  }, [settings, user?.id]);
+  const duplicateIds = useMemo(() => {
+    const seen = new Set();
+    return new Set(customQuizzes.flatMap((quiz) => {
+      const key = quizSignature(quiz);
+      if (seen.has(key)) return [quiz.id];
+      seen.add(key); return [];
+    }));
+  }, [customQuizzes]);
+  const filteredQuizzes = useMemo(() => customQuizzes.filter((quiz) => `${quiz.title} ${quiz.description || ''}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))).sort((left, right) => {
+    if (sort === 'name') return left.title.localeCompare(right.title, 'vi');
+    if (sort === 'count') return right.questionCount - left.questionCount;
+    return (Date.parse(right.updatedAt || right.createdAt) || 0) - (Date.parse(left.updatedAt || left.createdAt) || 0);
+  }), [customQuizzes, search, sort]);
+  const setSetting = (name, value) => setSettings((previous) => ({ ...previous, [name]: value }));
 
   function startQuiz(categoryId, availableCount) {
-    const finalCount = availableCount ? Math.min(selectedCount, availableCount) : selectedCount;
-    navigate(`/quiz/${categoryId}?mode=${selectedMode}&count=${finalCount}`);
+    if (configError) { setError(configError); return; }
+    if (!availableCount) { setError('Bộ đề chưa có câu hỏi. Hãy chỉnh sửa và thêm câu hỏi trước.'); return; }
+    const params = new URLSearchParams({ mode: selectedMode, count: resolveQuestionCount(selectedCount, availableCount), shuffleQuestions: settings.shuffleQuestions ? '1' : '0', shuffleAnswers: settings.shuffleAnswers ? '1' : '0' });
+    if (settings.timeLimit !== '' && selectedMode === 'exam') params.set('time', settings.timeLimit);
+    navigate(`/quiz/${categoryId}?${params}`);
   }
 
   function handleDeleteQuiz(e, quizId) {
     e.stopPropagation();
     if (window.confirm('Bạn có chắc chắn muốn xóa bộ đề thi này?')) {
-      deleteCustomQuiz(quizId);
+      try { deleteCustomQuiz(quizId); setNotice('Đã xóa bộ đề.'); setError(''); } catch (err) { setError(err.message); }
     }
   }
 
   function handleOpenShare(e, quiz) {
     e.stopPropagation();
+    setNotice('');
+    setError('');
     setShareModalQuiz(quiz);
   }
 
-  function copyShareLink(quiz) {
-    const link = `${window.location.origin}/quiz/${quiz.id}?mode=exam&count=${quiz.questionCount}`;
-    navigator.clipboard.writeText(link);
-    alert(`📋 Đã sao chép đường dẫn chia sẻ:\n${link}`);
+  async function copyShareLink(quiz) {
+    const link = `${window.location.origin}/quiz/${encodeURIComponent(quiz.shareCode || quiz.id)}?mode=exam&count=${quiz.questionCount}`;
+    try { await navigator.clipboard.writeText(link); setNotice('Đã sao chép đường dẫn. Người nhận cần nhập file JSON của bộ đề trước khi sử dụng.'); } catch { setError('Không sao chép được đường dẫn. Bạn có thể xuất file JSON để chia sẻ.'); }
   }
 
   function exportJson(quiz) {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(quiz, null, 2));
+    const { authorId: _authorId, authorName: _authorName, ...portableQuiz } = quiz;
+    const dataStr = URL.createObjectURL(new Blob([JSON.stringify({ ...portableQuiz, shareCode: quiz.shareCode || quiz.id }, null, 2)], { type: 'application/json' }));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
     downloadAnchor.setAttribute("download", `${quiz.title || 'quiz'}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    setTimeout(() => URL.revokeObjectURL(dataStr), 1000);
   }
 
   // Import bộ đề từ JSON file hoặc mã
-  function handleImportFile(e) {
-    const file = e.target.files[0];
+  async function handleImportFile(e) {
+    const input = e.target;
+    const file = input.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const quizData = JSON.parse(event.target.result);
-        if (!quizData.questions || !Array.isArray(quizData.questions)) {
-          alert('⚠️ File JSON không hợp lệ hoặc thiếu danh sách câu hỏi!');
-          return;
+    if (file.size > 10 * 1024 * 1024) { setError('File JSON tối đa 10 MB.'); input.value = ''; return; }
+    try {
+        const quizData = JSON.parse(await file.text());
+        if (!Array.isArray(quizData?.questions)) {
+          throw new Error('File JSON thiếu danh sách câu hỏi hợp lệ.');
         }
 
         const newQuiz = {
           ...quizData,
-          id: `custom-${Date.now()}`,
+          id: undefined,
           title: quizData.title || 'Bộ đề thi chia sẻ',
           createdAt: new Date().toISOString(),
         };
 
-        saveCustomQuiz(newQuiz);
-        alert(`🎉 Đã nhập thành công bộ đề: "${newQuiz.title}" (${newQuiz.questions.length} câu)`);
+        const result = saveCustomQuiz(newQuiz);
+        setNotice(result.duplicate ? `Bộ đề “${result.quiz.title}” đã có trong thư viện. Không tạo thêm bản trùng.` : `Đã nhập “${result.quiz.title}” · ${result.quiz.questionCount} câu hỏi.`);
+        setError('');
         setShowImportModal(false);
-      } catch {
-        alert('⚠️ File JSON bị lỗi định dạng!');
-      }
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setError(err instanceof SyntaxError ? 'File JSON bị lỗi định dạng.' : err.message);
+    }
+    input.value = '';
   }
 
   return (
@@ -154,14 +184,16 @@ export default function Dashboard() {
               <div className="mode-toggle">
                 <button
                   className={`mode-btn ${selectedMode === 'practice' ? 'active' : ''}`}
-                  onClick={() => setSelectedMode('practice')}
+                  onClick={() => setSetting('mode', 'practice')}
+                  aria-pressed={selectedMode === 'practice'}
                   id="mode-practice"
                 >
                   <span>📚</span> Luyện tập
                 </button>
                 <button
                   className={`mode-btn ${selectedMode === 'exam' ? 'active' : ''}`}
-                  onClick={() => setSelectedMode('exam')}
+                  onClick={() => setSetting('mode', 'exam')}
+                  aria-pressed={selectedMode === 'exam'}
                   id="mode-exam"
                 >
                   <span>🎯</span> Thi thật
@@ -170,7 +202,7 @@ export default function Dashboard() {
               <p className="setting-hint">
                 {selectedMode === 'practice'
                   ? '💡 Xem đáp án đúng ngay sau mỗi câu'
-                  : '⏱️ Có giới hạn thời gian, tự động xáo trộn đáp án khi làm bài'}
+                  : '⏱️ Làm bài có giới hạn thời gian, xem đáp án sau khi nộp'}
               </p>
             </div>
 
@@ -180,32 +212,42 @@ export default function Dashboard() {
                 {[5, 10, 20, 50, 100, 500].map((count) => (
                   <button
                     key={count}
-                    className={`count-btn ${selectedCount === count ? 'active' : ''}`}
-                    onClick={() => setSelectedCount(count)}
+                    className={`count-btn ${Number(selectedCount) === count ? 'active' : ''}`}
+                    onClick={() => setSetting('count', count)}
+                    aria-pressed={Number(selectedCount) === count}
                     id={`count-${count}`}
                   >
                     {count} câu
                   </button>
                 ))}
+                <button className={`count-btn ${selectedCount === 'all' ? 'active' : ''}`} aria-pressed={selectedCount === 'all'} onClick={() => setSetting('count', 'all')}>Tất cả</button>
               </div>
+              <label className="custom-count-label">Số câu tùy chọn<input className="input" type="number" min="1" max="5000" placeholder="Ví dụ: 35" value={selectedCount === 'all' ? '' : selectedCount} onChange={(event) => setSetting('count', event.target.value)} /></label>
+              <p className="setting-hint">Áp dụng cho mọi bộ đề. Nếu đề có ít câu hơn, lấy toàn bộ câu hiện có.</p>
             </div>
           </div>
+          <div className="settings-advanced">
+            <label className="setting-duration">Thời gian thi (phút)<input className="input" type="number" min="1" max="600" placeholder="Theo bộ đề" disabled={selectedMode === 'practice'} value={settings.timeLimit} onChange={(event) => setSetting('timeLimit', event.target.value)} /><span className="setting-hint">Để trống: theo bộ đề, hoặc 1 phút/câu với chủ đề mặc định.</span></label>
+            <div className="setting-checks"><label><input type="checkbox" checked={settings.shuffleQuestions} onChange={(event) => setSetting('shuffleQuestions', event.target.checked)} /> Xáo trộn câu hỏi</label><label><input type="checkbox" checked={settings.shuffleAnswers} onChange={(event) => setSetting('shuffleAnswers', event.target.checked)} /> Xáo trộn đáp án</label></div>
+          </div>
+          {configError && <p className="dashboard-feedback is-error" role="alert">{configError}</p>}
         </div>
+        {(error || quizStorageError) && <p className="dashboard-feedback is-error" role="alert">{error || quizStorageError}</p>}
+        {notice && <p className="dashboard-feedback" role="status">{notice}</p>}
 
         {/* Custom Quizzes Section */}
-        {customQuizzes.length > 0 && (
           <div className="section-block animate-fade-in-up stagger-2">
             <div className="section-header">
               <h2 className="heading-3">📁 Bộ Đề Thi Của Bạn ({customQuizzes.length})</h2>
-              <p className="text-secondary">Các bộ đề tự tạo từ file .docx hoặc dán bài học (Hỗ trợ chia sẻ, tùy chỉnh thời gian & lượt thi)</p>
+              <p className="text-secondary">{customQuizzes.reduce((sum, quiz) => sum + quiz.questionCount, 0)} câu hỏi · Chỉnh sửa bộ đề hoặc bắt đầu với cài đặt bên trên.</p>
             </div>
-
+            <div className="library-toolbar"><label className="library-search"><span className="sr-only">Tìm bộ đề</span><input className="input" type="search" placeholder="Tìm theo tên hoặc mô tả bộ đề…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><label className="library-sort">Sắp xếp<select className="input" value={sort} onChange={(event) => setSort(event.target.value)}><option value="updated">Cập nhật gần nhất</option><option value="name">Tên A → Z</option><option value="count">Nhiều câu nhất</option></select></label></div>
+            {!filteredQuizzes.length && <div className="glass-card library-empty"><p>{customQuizzes.length ? 'Không tìm thấy bộ đề phù hợp.' : 'Chưa có bộ đề. Tạo đề từ tài liệu hoặc nhập file JSON để bắt đầu.'}</p><button className="btn btn-secondary" onClick={() => customQuizzes.length ? setSearch('') : navigate('/create-quiz')}>{customQuizzes.length ? 'Xóa tìm kiếm' : '+ Tạo bộ đề'}</button></div>}
             <div className="categories-grid">
-              {customQuizzes.map((quiz) => (
-                <div
+              {filteredQuizzes.map((quiz) => (
+                <article
                   key={quiz.id}
                   className="category-card glass-card custom-quiz-card"
-                  onClick={() => startQuiz(quiz.id, quiz.questionCount)}
                   style={{ '--cat-color': quiz.color || '#6c5ce7' }}
                 >
                   <div className="cat-glow" />
@@ -216,6 +258,7 @@ export default function Dashboard() {
                         className="btn-action-icon"
                         onClick={(e) => handleOpenShare(e, quiz)}
                         title="Chia sẻ bộ đề thi"
+                        aria-label={`Chia sẻ ${quiz.title}`}
                       >
                         🔗
                       </button>
@@ -223,6 +266,7 @@ export default function Dashboard() {
                         className="btn-action-icon"
                         onClick={(e) => handleDeleteQuiz(e, quiz.id)}
                         title="Xóa bộ đề"
+                        aria-label={`Xóa ${quiz.title}`}
                       >
                         🗑️
                       </button>
@@ -230,6 +274,7 @@ export default function Dashboard() {
                   </div>
                   <h3 className="cat-name">{quiz.title}</h3>
                   <p className="cat-desc">{quiz.description}</p>
+                  {duplicateIds.has(quiz.id) && <span className="badge badge-warning">Có bản trùng nội dung</span>}
                   <div className="custom-card-tags">
                     <span className="badge badge-info">⏱️ {quiz.timeLimit || 30} phút</span>
                     <span className="badge badge-warning">
@@ -238,13 +283,13 @@ export default function Dashboard() {
                   </div>
                   <div className="cat-meta" style={{ marginTop: '1rem' }}>
                     <span className="cat-count">{quiz.questionCount} câu hỏi</span>
-                    <span className="cat-arrow">Bắt đầu →</span>
+                    <span className="cat-count">Sẽ làm {resolveQuestionCount(selectedCount, quiz.questionCount)} câu</span>
                   </div>
-                </div>
+                  <div className="quiz-card-buttons"><button className="btn btn-secondary" onClick={() => navigate(`/edit-quiz/${quiz.id}`)}>Chỉnh sửa</button><button className="btn btn-primary" disabled={Boolean(configError) || !quiz.questionCount} onClick={() => startQuiz(quiz.id, quiz.questionCount)}>Bắt đầu →</button></div>
+                </article>
               ))}
             </div>
           </div>
-        )}
 
         {/* Categories Grid - Default */}
         <div className="section-header animate-fade-in-up stagger-3" style={{ marginTop: '2.5rem' }}>
@@ -283,15 +328,9 @@ export default function Dashboard() {
               Bộ đề: <strong>{shareModalQuiz.title}</strong> ({shareModalQuiz.questionCount} câu)
             </p>
 
-            <div className="input-group" style={{ marginBottom: '1rem' }}>
-              <label>Mã bộ đề (Share Code)</label>
-              <input
-                type="text"
-                className="input"
-                readOnly
-                value={shareModalQuiz.shareCode || shareModalQuiz.id}
-              />
-            </div>
+            <p className="text-secondary" style={{ marginBottom: '1rem' }}>Xuất file JSON và gửi cho bạn bè để nhập bộ đề. Bộ đề đang được lưu trong trình duyệt này; đường dẫn riêng không mang theo câu hỏi.</p>
+            {notice && <p className="dashboard-feedback" role="status">{notice}</p>}
+            {error && <p className="dashboard-feedback is-error" role="alert">{error}</p>}
 
             <div className="modal-buttons">
               <button className="btn btn-primary" onClick={() => copyShareLink(shareModalQuiz)}>
@@ -314,6 +353,7 @@ export default function Dashboard() {
         <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
           <div className="modal-card glass-card animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <h3 className="heading-3">📥 Nhập Đề Thi Chia Sẻ</h3>
+            {error && <p className="dashboard-feedback is-error" role="alert">{error}</p>}
             <p className="text-secondary" style={{ margin: '0.5rem 0 1.5rem' }}>
               Tải lên file đề thi dạng .JSON được chia sẻ từ bạn bè
             </p>

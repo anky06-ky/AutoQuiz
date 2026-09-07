@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { initDatabase, getPool, isConnected } from './db.js';
+import { normalizeQuiz } from '../src/utils/quizData.js';
+import { replaceQuizQuestions } from './quizRepository.js';
 
 dotenv.config();
 
@@ -105,7 +107,7 @@ app.get('/api/quizzes/:id', async (req, res) => {
     const formattedQuestions = qRows.map(q => ({
       id: q.id,
       question: q.question,
-      options: [q.optionA, q.optionB, q.optionC, q.optionD],
+      options: [q.optionA, q.optionB, q.optionC, q.optionD].filter((option) => option !== ''),
       correctAnswer: q.correctAnswer,
       explanation: q.explanation,
     }));
@@ -120,10 +122,15 @@ app.get('/api/quizzes/:id', async (req, res) => {
 });
 
 app.post('/api/quizzes', async (req, res) => {
-  const { id, title, description, icon, color, questions, authorId, authorName, timeLimit, maxAttempts, shareCode } = req.body;
-  if (!title || !questions || !Array.isArray(questions)) {
-    return res.status(400).json({ error: 'Dữ liệu bộ đề thi không hợp lệ!' });
+  let quiz;
+  try {
+    quiz = normalizeQuiz(req.body);
+    if (quiz.id && (typeof quiz.id !== 'string' || quiz.id.length > 50)) throw new Error('Mã bộ đề không hợp lệ.');
+    if (quiz.shareCode && (typeof quiz.shareCode !== 'string' || quiz.shareCode.length > 50)) throw new Error('Mã chia sẻ không hợp lệ.');
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
+  const { id, title, description, icon, color, questions, authorId, authorName, timeLimit, maxAttempts, shareCode } = quiz;
 
   if (!isConnected()) {
     return res.status(503).json({ error: 'MySQL server chưa sẵn sàng' });
@@ -132,9 +139,10 @@ app.post('/api/quizzes', async (req, res) => {
   const quizId = id || `custom-${Date.now()}`;
   const code = shareCode || Math.random().toString(36).substring(2, 8).toUpperCase();
   const pool = getPool();
-  const conn = await pool.getConnection();
+  let conn;
 
   try {
+    conn = await pool.getConnection();
     await conn.beginTransaction();
 
     await conn.query(
@@ -147,32 +155,15 @@ app.post('/api/quizzes', async (req, res) => {
       ]
     );
 
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-      const qId = q.id || `q-${quizId}-${i + 1}`;
-      const optA = q.options[0] || '';
-      const optB = q.options[1] || '';
-      const optC = q.options[2] || '';
-      const optD = q.options[3] || '';
-
-      await conn.query(
-        `INSERT INTO questions (id, quizId, question, optionA, optionB, optionC, optionD, correctAnswer, explanation)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE question=?, optionA=?, optionB=?, optionC=?, optionD=?, correctAnswer=?, explanation=?`,
-        [
-          qId, quizId, q.question, optA, optB, optC, optD, q.correctAnswer || 0, q.explanation || '',
-          q.question, optA, optB, optC, optD, q.correctAnswer || 0, q.explanation || ''
-        ]
-      );
-    }
+    await replaceQuizQuestions(conn, quizId, questions);
 
     await conn.commit();
     res.json({ success: true, quizId, shareCode: code, count: questions.length });
   } catch (err) {
-    await conn.rollback();
+    if (conn) await conn.rollback();
     res.status(500).json({ error: err.message });
   } finally {
-    conn.release();
+    conn?.release();
   }
 });
 

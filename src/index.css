@@ -174,7 +174,7 @@ button {
   background: none;
 }
 
-input {
+input, select, textarea {
   font-family: inherit;
   outline: none;
   border: none;
@@ -363,6 +363,23 @@ img {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-glow);
   background: var(--glass-bg-hover);
+}
+
+select.input {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0c0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 2.5rem;
+}
+
+select.input option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 0.5rem;
 }
 
 .input-error {

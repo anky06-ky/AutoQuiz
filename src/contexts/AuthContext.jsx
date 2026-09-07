@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useSyncExternalStore } from 'react';
+import { quizStore } from '../services/quizStore';
 import {
   apiRegister,
   apiLogin,
@@ -13,12 +14,12 @@ const AuthContext = createContext(null);
 const USERS_KEY = 'autoquiz_users';
 const CURRENT_USER_KEY = 'autoquiz_current_user';
 const HISTORY_KEY = 'autoquiz_history';
-const CUSTOM_QUIZZES_KEY = 'autoquiz_custom_quizzes';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [useMysql, setUseMysql] = useState(false);
+  const customQuizzes = useSyncExternalStore(quizStore.subscribe, quizStore.getSnapshot);
 
   // Load user & check MySQL Server
   useEffect(() => {
@@ -193,40 +194,17 @@ export function AuthProvider({ children }) {
 
   // Quản lý bộ đề thi tự tạo
   function getCustomQuizzes() {
-    try {
-      return JSON.parse(localStorage.getItem(CUSTOM_QUIZZES_KEY)) || [];
-    } catch {
-      return [];
-    }
+    return customQuizzes;
   }
 
-  function saveCustomQuiz(quiz) {
-    const customQuizzes = getCustomQuizzes();
-    const existingIndex = customQuizzes.findIndex((q) => q.id === quiz.id);
-
-    const quizItem = {
-      ...quiz,
-      authorId: user ? user.id : 'guest',
-      authorName: user ? user.displayName : 'Guest',
-    };
-
-    if (existingIndex >= 0) {
-      customQuizzes[existingIndex] = quizItem;
-    } else {
-      customQuizzes.unshift(quizItem);
-    }
-
-    localStorage.setItem(CUSTOM_QUIZZES_KEY, JSON.stringify(customQuizzes));
-
-    if (useMysql) {
-      apiSaveQuiz(quizItem);
-    }
+  function saveCustomQuiz(quiz, options) {
+    const result = quizStore.save(quiz, user, options);
+    if (useMysql && !result.duplicate) apiSaveQuiz(result.quiz);
+    return result;
   }
 
   function deleteCustomQuiz(quizId) {
-    const customQuizzes = getCustomQuizzes();
-    const filtered = customQuizzes.filter((q) => q.id !== quizId);
-    localStorage.setItem(CUSTOM_QUIZZES_KEY, JSON.stringify(filtered));
+    quizStore.remove(quizId);
 
     if (useMysql) {
       apiDeleteQuiz(quizId);
@@ -246,6 +224,8 @@ export function AuthProvider({ children }) {
     getLeaderboard,
     getStats,
     getCustomQuizzes,
+    customQuizzes,
+    quizStorageError: quizStore.getError(),
     saveCustomQuiz,
     deleteCustomQuiz,
   };

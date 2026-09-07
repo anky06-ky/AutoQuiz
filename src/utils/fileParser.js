@@ -1,4 +1,5 @@
-import mammoth from 'mammoth';
+import { shuffleOptions } from './quizData.js';
+export { shuffleOptions, prepareQuizWithShuffledAnswers } from './quizData.js';
 
 // =============================================
 // AutoQuiz File Parser & Smart Quiz Generator
@@ -26,6 +27,7 @@ export async function parseFileContent(file) {
   }
 
   if (extension === 'docx') {
+    const { default: mammoth } = await import('mammoth');
     const arrayBuffer = await file.arrayBuffer();
 
     // Cấu hình styleMap để chuyển đổi phần TÔ VÀNG (Highlight) trong Word thành thẻ <mark>
@@ -356,34 +358,6 @@ function createQuizFromSentence(sentence, index, allSentences) {
     correctAnswer: shuffled.correctIndex,
     explanation: `Trích dẫn từ tài liệu: "${sentence}"`,
   };
-}
-
-export function shuffleOptions(options, correctIndex) {
-  const items = options.map((opt, idx) => ({ text: opt, isCorrect: idx === correctIndex }));
-
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
-  }
-
-  const newOptions = items.map((item) => item.text);
-  const newCorrectIndex = items.findIndex((item) => item.isCorrect);
-
-  return {
-    options: newOptions,
-    correctIndex: newCorrectIndex,
-  };
-}
-
-export function prepareQuizWithShuffledAnswers(questionsList) {
-  return questionsList.map((q) => {
-    const shuffled = shuffleOptions(q.options, q.correctAnswer);
-    return {
-      ...q,
-      options: shuffled.options,
-      correctAnswer: shuffled.correctIndex,
-    };
-  });
 }
 
 function getRandomDistractors(correctText, allSentences, currentIndex) {
