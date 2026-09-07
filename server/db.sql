@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(50) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
   displayName VARCHAR(100) NOT NULL,
-  avatar VARCHAR(10) DEFAULT '⚡',
+  avatar VARCHAR(10) DEFAULT '🐼',
   role VARCHAR(20) NOT NULL DEFAULT 'user',
   status VARCHAR(20) NOT NULL DEFAULT 'active',
   passwordChangedAt DATETIME(3) NULL,

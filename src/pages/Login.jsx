@@ -56,7 +56,7 @@ export default function Login() {
       <div className="login-container animate-scale-in">
         {/* Header */}
         <div className="login-header">
-          <div className="login-logo animate-float">⚡</div>
+          <div className="login-logo animate-float" role="img" aria-label="Linh vật gấu trúc">🐼</div>
           <h1 className="login-title">
             Auto<span className="text-gradient">Quiz</span>
           </h1>

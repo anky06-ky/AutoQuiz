@@ -28,7 +28,7 @@ export default function Navbar() {
       <div className="navbar-container">
         {/* Logo */}
         <Link to="/" className="navbar-logo" id="navbar-logo">
-          <span className="logo-icon">⚡</span>
+          <span className="logo-icon" aria-label="Linh vật gấu trúc">🐼</span>
           <span className="logo-text">
             Auto<span className="text-gradient">Quiz</span>
           </span>

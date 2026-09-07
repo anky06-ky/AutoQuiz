@@ -59,7 +59,7 @@ export async function initDatabase() {
         username VARCHAR(50) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         displayName VARCHAR(100) NOT NULL,
-        avatar VARCHAR(10) DEFAULT '⚡',
+        avatar VARCHAR(10) DEFAULT '🐼',
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);

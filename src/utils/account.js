@@ -1,4 +1,4 @@
-export const AVATARS = ['🦊', '🐱', '🐼', '🦁', '🐯', '🐻', '🦄', '🐲', '🦅', '🐬', '🦋', '🌟', '🚀', '💎', '🎯', '⚡'];
+export const AVATARS = ['🐼', '🦊', '🐱', '🦁', '🐯', '🐻', '🦄', '🐲', '🦅', '🐬', '🦋', '🌟', '🚀', '💎', '🎯', '⚡'];
 const HASH_PREFIX = 'aq-pbkdf2-sha256';
 const ITERATIONS = 600000; // OWASP PBKDF2-HMAC-SHA256 guidance.
 const encoder = new TextEncoder();
@@ -27,7 +27,7 @@ export function validateProfile(input) {
 export function publicAccount(account) {
   return {
     id: account.id, username: account.username, displayName: account.displayName,
-    avatar: account.avatar || '⚡', createdAt: account.createdAt,
+    avatar: account.avatar || '🐼', createdAt: account.createdAt,
     role: account.role === 'admin' ? 'admin' : 'user',
     status: account.status === 'locked' ? 'locked' : 'active',
     passwordChangedAt: account.passwordChangedAt || null,

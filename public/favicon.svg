@@ -6,5 +6,5 @@
     </linearGradient>
   </defs>
   <circle cx="50" cy="50" r="45" fill="url(#grad)" opacity="0.2"/>
-  <text x="50" y="65" text-anchor="middle" font-size="50" font-weight="bold" fill="url(#grad)">⚡</text>
+  <text x="50" y="65" text-anchor="middle" font-size="50">🐼</text>
 </svg>

@@ -116,7 +116,7 @@ export default function Dashboard() {
         <div className="dashboard-welcome animate-fade-in-up">
           <div className="welcome-header">
             <div className="welcome-content">
-              <span className="welcome-avatar">{user?.avatar}</span>
+              <span className="welcome-avatar" role="img" aria-label="Linh vật gấu trúc">🐼</span>
               <div>
                 <h1 className="welcome-title">
                   Xin chào, <span className="text-gradient">{user?.displayName}</span>! 👋
