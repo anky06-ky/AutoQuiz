@@ -18,7 +18,7 @@ services:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        value: 3306
+        value: 4000
       - key: DB_USER
         sync: false
       - key: DB_PASSWORD
@@ -26,7 +26,7 @@ services:
       - key: DB_NAME
         value: autoquiz_db
       - key: DB_SSL
-        value: "false"
+        value: "true"
       - key: BOOTSTRAP_ADMIN_USERNAME
         value: admin06
       - key: BOOTSTRAP_ADMIN_PASSWORD

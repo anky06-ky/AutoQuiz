@@ -1,46 +1,46 @@
-# Triển khai AutoQuiz lên Render
+# Triển khai AutoQuiz miễn phí
 
-AutoQuiz chạy giao diện và API trên cùng một Render Web Service. `render.yaml` tự đặt `VITE_API_BASE_URL=/api` cho bản build này. Dữ liệu lâu dài nằm trong MySQL; không lưu cơ sở dữ liệu trong thư mục của Web Service vì hệ thống tệp này bị xóa khi triển khai lại.
+AutoQuiz chạy giao diện và API trên cùng một Render Web Service. Dữ liệu được lưu lâu dài trong TiDB Cloud Starter, một dịch vụ tương thích giao thức MySQL. Không lưu cơ sở dữ liệu trong thư mục của Web Service vì ổ đĩa của gói Free sẽ bị xóa khi dịch vụ khởi động lại hoặc triển khai lại.
 
-> Lưu ý chi phí: Web Service có thể chọn gói Free, nhưng MySQL tự quản lý trên Render cần Private Service và Persistent Disk trả phí. Nếu muốn tiết kiệm, dùng một dịch vụ MySQL bên ngoài rồi điền thông tin kết nối ở bước 2.
+## 1. Cơ sở dữ liệu TiDB Cloud Starter
 
-## 1. Tạo MySQL
+Cấu hình đang dùng:
 
-1. Mở hướng dẫn **Deploy MySQL** chính thức của Render: <https://render.com/docs/deploy-mysql>.
-2. Dùng nút one-click hoặc tạo Private Service từ kho `render-examples/mysql`.
-3. Đặt các biến:
-   - `MYSQL_DATABASE=autoquiz_db`
-   - `MYSQL_USER=autoquiz`
-   - `MYSQL_PASSWORD`: mật khẩu mạnh do bạn tự tạo
-   - `MYSQL_ROOT_PASSWORD`: một mật khẩu mạnh khác
-4. Chọn region **Singapore** để cùng region với Web Service, rồi gắn Persistent Disk vào đúng `/var/lib/mysql`, tối thiểu 10 GB theo mẫu Render.
-5. Chờ dịch vụ hoạt động và ghi lại hostname nội bộ, ví dụ `autoquiz-mysql`. Ứng dụng dùng hostname này và cổng `3306`, không dùng URL có `http://`.
+- Plan: `Starter`
+- Region: `Singapore (ap-southeast-1)`
+- Monthly Spending Limit: `$0`
+- Database: `autoquiz_db`
+- Port: `4000`
+- TLS: bắt buộc
+
+Trong hạn mức miễn phí, mỗi Starter instance có 5 GiB row storage, 5 GiB columnar storage và 50 triệu Request Units mỗi tháng. Khi đạt hạn mức và spending limit vẫn là `$0`, instance sẽ bị giới hạn thay vì tự phát sinh phí.
 
 ## 2. Tạo Web Service bằng Blueprint
 
 1. Vào Render Dashboard, chọn **New > Blueprint**.
 2. Kết nối GitHub và chọn kho `anky06-ky/AutoQuiz`.
 3. Render tự đọc `render.yaml`. Khi được hỏi, điền:
-   - `DB_HOST`: hostname nội bộ của MySQL ở bước 1
-   - `DB_USER=autoquiz`
-   - `DB_PASSWORD`: đúng mật khẩu `MYSQL_PASSWORD`
+   - `DB_HOST`: hostname Public Endpoint do TiDB Cloud cung cấp
+   - `DB_USER`: username đầy đủ do TiDB Cloud cung cấp, gồm cả tiền tố instance
+   - `DB_PASSWORD`: mật khẩu đã tạo trong hộp **Connect** của TiDB Cloud
    - `BOOTSTRAP_ADMIN_PASSWORD`: mật khẩu ít nhất 8 ký tự do bạn tự đặt cho `admin06`
-4. Giữ `DB_NAME=autoquiz_db`, `DB_PORT=3306`, `DB_SSL=false` khi MySQL ở cùng Render workspace.
+4. Giữ các giá trị có sẵn: `DB_NAME=autoquiz_db`, `DB_PORT=4000`, `DB_SSL=true`.
 5. Bấm **Apply**. Build thành công khi `/api/health` trả về `mysqlConnected: true`.
 
-Nếu dùng MySQL bên ngoài Render, nhập host do nhà cung cấp cấp và đặt `DB_SSL=true` nếu họ yêu cầu TLS. Có thể thêm `DB_SSL_CA` theo đúng hướng dẫn của nhà cung cấp.
+Máy chủ tự tạo database `autoquiz_db` trong lần kết nối đầu nếu database này chưa tồn tại.
 
 ## 3. Đăng nhập admin06
 
-Lần khởi động đầu tiên, khi chưa có admin nào, máy chủ tự tạo `admin06` bằng mật khẩu bạn nhập trong Blueprint. Mở `https://<ten-dich-vu>.onrender.com` và đăng nhập; menu **Quản lý tài khoản** sẽ xuất hiện.
+Lần khởi động đầu tiên, khi chưa có admin nào, máy chủ tự tạo `admin06` bằng mật khẩu nhập trong Blueprint. Mở `https://<ten-dich-vu>.onrender.com` và đăng nhập; menu **Quản lý tài khoản** sẽ xuất hiện.
 
-Sau khi đăng nhập thành công, vào phần **Environment** của Web Service, xóa `BOOTSTRAP_ADMIN_PASSWORD` và lưu thay đổi. Tài khoản cùng mật khẩu đã băm trong MySQL vẫn còn; biến khởi tạo không cần giữ lâu dài.
+Sau khi đăng nhập thành công, vào phần **Environment** của Web Service, xóa `BOOTSTRAP_ADMIN_PASSWORD` và lưu thay đổi. Tài khoản cùng mật khẩu đã băm trong cơ sở dữ liệu vẫn còn; biến khởi tạo không cần giữ lâu dài.
 
-## 4. Quản lý và sao lưu dữ liệu
+## 4. Quản lý dữ liệu
 
 - Quản lý người dùng tại `/admin/accounts`.
-- Bộ đề và lịch sử được lưu theo tài khoản trong MySQL và tự tải lại khi người dùng đăng nhập trên máy khác.
-- Xem log kết nối tại tab **Logs**; kiểm tra nhanh bằng `/api/health`.
-- Sao lưu định kỳ bằng `mysqldump`. Render khuyến nghị không phục hồi cơ sở dữ liệu MySQL trực tiếp từ snapshot của Persistent Disk vì có thể làm hỏng dữ liệu.
+- Bộ đề và lịch sử được lưu theo tài khoản và tự tải lại khi người dùng đăng nhập trên máy khác.
+- Kiểm tra kết nối tại `/api/health` và xem lỗi trong tab **Logs** của Render.
+- Quản lý bảng và chạy truy vấn bằng **SQL Editor** trong TiDB Cloud.
+- Theo dõi dung lượng và Request Units trên trang **Overview** để giữ trong hạn mức miễn phí.
 
-Sau lần thiết lập đầu, mỗi lần push lên nhánh mặc định GitHub sẽ tự build và triển khai lại Web Service.
+Sau lần thiết lập đầu, mỗi lần push lên nhánh `main` trên GitHub sẽ tự build và triển khai lại Web Service.
