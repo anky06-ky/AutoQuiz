@@ -27,3 +27,7 @@ services:
         value: autoquiz_db
       - key: DB_SSL
         value: "false"
+      - key: BOOTSTRAP_ADMIN_USERNAME
+        value: admin06
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false

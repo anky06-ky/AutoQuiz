@@ -24,23 +24,17 @@ AutoQuiz chạy giao diện và API trên cùng một Render Web Service. `rende
    - `DB_HOST`: hostname nội bộ của MySQL ở bước 1
    - `DB_USER=autoquiz`
    - `DB_PASSWORD`: đúng mật khẩu `MYSQL_PASSWORD`
+   - `BOOTSTRAP_ADMIN_PASSWORD`: mật khẩu ít nhất 8 ký tự do bạn tự đặt cho `admin06`
 4. Giữ `DB_NAME=autoquiz_db`, `DB_PORT=3306`, `DB_SSL=false` khi MySQL ở cùng Render workspace.
 5. Bấm **Apply**. Build thành công khi `/api/health` trả về `mysqlConnected: true`.
 
 Nếu dùng MySQL bên ngoài Render, nhập host do nhà cung cấp cấp và đặt `DB_SSL=true` nếu họ yêu cầu TLS. Có thể thêm `DB_SSL_CA` theo đúng hướng dẫn của nhà cung cấp.
 
-## 3. Tạo admin06 trên dữ liệu cloud
+## 3. Đăng nhập admin06
 
-Cơ sở dữ liệu trên Render tách biệt với MySQL trên máy của bạn, nên cần tạo tài khoản một lần nữa:
+Lần khởi động đầu tiên, khi chưa có admin nào, máy chủ tự tạo `admin06` bằng mật khẩu bạn nhập trong Blueprint. Mở `https://<ten-dich-vu>.onrender.com` và đăng nhập; menu **Quản lý tài khoản** sẽ xuất hiện.
 
-1. Mở địa chỉ `https://<ten-dich-vu>.onrender.com` và đăng ký `admin06` bằng mật khẩu riêng.
-2. Mở trang **Shell** của AutoQuiz Web Service và chạy:
-
-   ```bash
-   npm run admin -- admin06
-   ```
-
-3. Đăng xuất rồi đăng nhập lại. Menu **Quản lý tài khoản** sẽ xuất hiện.
+Sau khi đăng nhập thành công, vào phần **Environment** của Web Service, xóa `BOOTSTRAP_ADMIN_PASSWORD` và lưu thay đổi. Tài khoản cùng mật khẩu đã băm trong MySQL vẫn còn; biến khởi tạo không cần giữ lâu dài.
 
 ## 4. Quản lý và sao lưu dữ liệu
 

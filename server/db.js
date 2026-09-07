@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import { bootstrapAdmin } from './bootstrapAdmin.js';
 
 dotenv.config();
 
@@ -148,6 +149,12 @@ export async function initDatabase() {
     if (!quizIndexes.some((index) => index.Key_name === 'idx_quizzes_author')) await pool.query('CREATE INDEX idx_quizzes_author ON quizzes(authorId, updatedAt)');
     const [historyIndexes] = await pool.query('SHOW INDEX FROM quiz_history');
     if (!historyIndexes.some((index) => index.Key_name === 'idx_history_user')) await pool.query('CREATE INDEX idx_history_user ON quiz_history(userId, timestamp)');
+
+    const adminCreated = await bootstrapAdmin(pool, {
+      username: process.env.BOOTSTRAP_ADMIN_USERNAME,
+      password: process.env.BOOTSTRAP_ADMIN_PASSWORD,
+    });
+    if (adminCreated) console.log(`✅ Đã khởi tạo quản trị viên '${process.env.BOOTSTRAP_ADMIN_USERNAME}'. Hãy xóa biến BOOTSTRAP_ADMIN_PASSWORD trên hosting.`);
 
     isDbConnected = true;
     console.log(`✅ Kết nối thành công MySQL Database '${DB_NAME}' tại ${DB_HOST}:${DB_PORT}`);

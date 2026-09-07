@@ -6,6 +6,7 @@ import { createLocalAccounts, USERS_KEY } from '../src/services/localAccounts.js
 import { hashPassword, verifyPassword, publicAccount } from '../src/utils/account.js';
 import { createAccountRouter } from '../server/accountRoutes.js';
 import { resolveAccessChange } from '../server/accountPolicy.js';
+import { bootstrapAdmin } from '../server/bootstrapAdmin.js';
 
 const legacy = { id: 'legacy', username: 'learner', displayName: 'Người học', avatar: '🦊', password: 'old-pass', role: 'user', status: 'active' };
 function storageOf(accounts = [legacy]) {
@@ -82,6 +83,41 @@ test('access policy rejects self-demotion, self-lock and revoked administrators'
   assert.throws(() => resolveAccessChange('admin', admin, { role: 'user' }, ['admin']));
   assert.throws(() => resolveAccessChange('revoked', legacy, { role: 'admin' }, ['admin']));
   assert.deepEqual(resolveAccessChange('admin', legacy, { status: 'locked' }, ['admin']), { role: 'user', status: 'locked' });
+});
+
+test('bootstrap creates the first admin without storing the supplied plaintext password', async () => {
+  const calls = [];
+  const connection = {
+    beginTransaction: async () => calls.push(['begin']),
+    query: async (sql, values = []) => {
+      calls.push([sql, values]);
+      if (sql.includes("role = 'admin'")) return [[]];
+      if (sql.startsWith('SELECT id FROM users WHERE username')) return [[]];
+      return [{ affectedRows: 1 }];
+    },
+    commit: async () => calls.push(['commit']), rollback: async () => calls.push(['rollback']), release: () => calls.push(['release']),
+  };
+  const created = await bootstrapAdmin({ getConnection: async () => connection }, { username: ' ADMIN06 ', password: 'bootstrap-password' }, async () => 'encoded-password');
+  assert.equal(created, true);
+  const insert = calls.find(([sql]) => typeof sql === 'string' && sql.startsWith('INSERT INTO users'));
+  assert.equal(insert[1][1], 'admin06');
+  assert.equal(insert[1][2], 'encoded-password');
+  assert.ok(!JSON.stringify(insert).includes('bootstrap-password'));
+  assert.ok(calls.some(([action]) => action === 'commit'));
+  assert.ok(!calls.some(([action]) => action === 'rollback'));
+});
+
+test('bootstrap leaves an existing active administrator unchanged', async () => {
+  let encoded = false;
+  const connection = {
+    beginTransaction: async () => {},
+    query: async () => [[{ id: 'existing-admin' }]],
+    commit: async () => {}, rollback: async () => {}, release: () => {},
+  };
+  const created = await bootstrapAdmin({ getConnection: async () => connection }, { username: 'admin06', password: 'bootstrap-password' }, async () => { encoded = true; return 'encoded'; });
+  assert.equal(created, false);
+  assert.equal(encoded, false);
+  assert.equal(await bootstrapAdmin({ getConnection: async () => { throw new Error('should not connect'); } }, { username: 'admin06' }), false);
 });
 
 async function apiFixture(t) {
